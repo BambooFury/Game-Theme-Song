@@ -18,6 +18,18 @@ end
 
 
 
+local ok_fs, fs = pcall(require, "fs")
+
+if not ok_fs then
+
+    logger:warn("fs module unavailable: " .. tostring(fs))
+
+    fs = nil
+
+end
+
+
+
 local function resolve_plugin_dir()
 
     local source = debug.getinfo(1, "S").source or ""
@@ -39,6 +51,8 @@ local PLUGIN_DIR   = resolve_plugin_dir()
 local CACHE_FILE   = PLUGIN_DIR .. "/cache.json"
 
 local CONFIG_FILE  = PLUGIN_DIR .. "/settings.json"
+
+local AUDIO_DIR    = PLUGIN_DIR .. "/audio_cache"
 
 
 
@@ -141,6 +155,110 @@ local function merge_defaults(target, defaults)
     end
 
     return target
+
+end
+
+
+
+local function ensure_audio_dir()
+
+    if fs then
+
+        if not fs.is_directory(AUDIO_DIR) then
+
+            fs.create_directories(AUDIO_DIR)
+
+        end
+
+    else
+
+        os.execute('mkdir "' .. AUDIO_DIR:gsub("/", "\\") .. '" 2>nul')
+
+    end
+
+end
+
+
+
+local function download_audio_file(url, dest_path)
+
+    if not http then return false end
+
+    local dl_opts = {
+
+        timeout          = 60,
+
+        follow_redirects = true,
+
+        verify_ssl       = true,
+
+        user_agent       = HTTP_OPTS.user_agent,
+
+    }
+
+    local resp, err = http.get(url, dl_opts)
+
+    if not resp then
+
+        logger:warn("download failed: " .. tostring(err))
+
+        return false
+
+    end
+
+    if resp.status < 200 or resp.status >= 300 then
+
+        logger:warn("download http " .. tostring(resp.status) .. " for " .. url)
+
+        return false
+
+    end
+
+    if not resp.body or #resp.body < 1024 then
+
+        logger:warn("download body too small: " .. tostring(resp.body and #resp.body or 0))
+
+        return false
+
+    end
+
+    local ok = write_file(dest_path, resp.body)
+
+    if ok then
+
+        logger:info("saved audio to " .. dest_path .. " (" .. #resp.body .. " bytes)")
+
+    end
+
+    return ok
+
+end
+
+
+
+local function audio_file_path(app_id)
+
+    return AUDIO_DIR .. "/" .. tostring(app_id) .. ".m4a"
+
+end
+
+
+
+local function audio_file_exists(app_id)
+
+    local path = audio_file_path(app_id)
+
+    if fs then
+
+        return fs.is_file(path)
+
+    end
+
+    local f = io.open(path, "rb")
+
+    if f then f:close() return true end
+
+    return false
 
 end
 
@@ -552,25 +670,65 @@ function get_theme_audio(app_id, force_refresh, game_name)
 
     local key = tostring(app_id)
 
+
+
+    if not force_refresh and audio_file_exists(app_id) then
+
+        local entry = cache[key] or {}
+
+        return json.encode({
+
+            ok         = true,
+
+            local_path = audio_file_path(app_id),
+
+            title      = entry.title,
+
+            video_id   = entry.video_id,
+
+            cached     = true,
+
+        })
+
+    end
+
+
+
     if not force_refresh and cache[key] and cache[key].url then
 
         local entry = cache[key]
 
-        return json.encode({
+        local dl_url = entry.url
 
-            ok        = true,
+        local dest = audio_file_path(app_id)
 
-            url       = entry.url,
+        ensure_audio_dir()
 
-            proxy_url = entry.proxy_url,
+        local downloaded = download_audio_file(dl_url, dest)
 
-            title     = entry.title,
+        if not downloaded and entry.proxy_url then
 
-            video_id  = entry.video_id,
+            downloaded = download_audio_file(entry.proxy_url, dest)
 
-            cached    = true,
+        end
 
-        })
+        if downloaded then
+
+            return json.encode({
+
+                ok         = true,
+
+                local_path = dest,
+
+                title      = entry.title,
+
+                video_id   = entry.video_id,
+
+                cached     = true,
+
+            })
+
+        end
 
     end
 
@@ -606,6 +764,40 @@ function get_theme_audio(app_id, force_refresh, game_name)
 
 
 
+    local dest = audio_file_path(app_id)
+
+    ensure_audio_dir()
+
+    local downloaded = download_audio_file(result.url, dest)
+
+    if not downloaded and result.proxy_url then
+
+        downloaded = download_audio_file(result.proxy_url, dest)
+
+    end
+
+
+
+    if downloaded then
+
+        return json.encode({
+
+            ok         = true,
+
+            local_path = dest,
+
+            title      = result.title,
+
+            video_id   = result.video_id,
+
+            cached     = false,
+
+        })
+
+    end
+
+
+
     return json.encode({
 
         ok        = true,
@@ -631,6 +823,18 @@ function invalidate_audio(app_id)
     cache[tostring(app_id)] = nil
 
     save_cache()
+
+    local path = audio_file_path(app_id)
+
+    if fs and fs.is_file(path) then
+
+        fs.remove(path)
+
+    else
+
+        os.remove(path)
+
+    end
 
     return json.encode({ ok = true })
 
@@ -683,6 +887,8 @@ end
 local function on_load()
 
     load_state()
+
+    ensure_audio_dir()
 
     logger:info("Game Theme Song plugin loaded (dir=" .. PLUGIN_DIR .. ")")
 
