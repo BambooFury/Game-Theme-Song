@@ -72,13 +72,15 @@ interface ResolvedAudio {
 
 	proxy_url?: string | null;
 
+	local_path?: string | null;
+
 	title?: string;
 
 	ts: number;
 
 }
 
-const RESOLVED_TTL_MS = 30 * 60 * 1000;
+const RESOLVED_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 const RESOLVE_COOLDOWN_MS = 10 * 1000;
 
@@ -314,7 +316,7 @@ async function resolveAudioFor(appId: number, name: string, forceRefresh: boolea
 
 			const resp = typeof raw === 'string' ? JSON.parse(raw) : raw;
 
-			if (!resp?.ok || !resp.url) {
+			if (!resp?.ok || (!resp.url && !resp.local_path)) {
 
 				warn('no audio for', name, resp?.error);
 
@@ -322,11 +324,19 @@ async function resolveAudioFor(appId: number, name: string, forceRefresh: boolea
 
 			}
 
+			const playUrl = resp.local_path
+
+				? 'file:///' + resp.local_path.replace(/\\/g, '/')
+
+				: resp.url;
+
 			const info: ResolvedAudio = {
 
-				url: resp.url,
+				url: playUrl,
 
-				proxy_url: resp.proxy_url,
+				proxy_url: resp.local_path ? null : resp.proxy_url,
+
+				local_path: resp.local_path,
 
 				title: resp.title,
 
