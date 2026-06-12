@@ -150,6 +150,37 @@ local function norm_words(text)
     return " " .. t .. " "
 end
 
+local EDITION_PHRASES = {
+    "game of the year edition", "game of the year", "goty edition", "goty",
+    "digital deluxe edition", "deluxe edition", "premium edition", "definitive edition",
+    "complete edition", "enhanced edition", "special edition", "ultimate edition",
+    "anniversary edition", "legendary edition", "collector's edition", "collectors edition",
+    "gold edition", "standard edition", "vr edition", "director's cut", "directors cut",
+    "hd remaster", "remastered", "remaster", "redux",
+}
+
+local function clean_game_name(name)
+    local s = tostring(name):gsub("\226\132\162", ""):gsub("\194\174", ""):gsub("\194\169", ""):gsub("\226\128\153", "'"):lower()
+    for _, p in ipairs(EDITION_PHRASES) do
+        s = s:gsub("%f[%w]" .. p .. "%f[%W]", " ")
+    end
+    s = s:gsub("[%s:%-]+$", "")
+    s = s:gsub("%s+", " "):gsub("^%s+", "")
+    return s
+end
+
+local function name_variants(game_name)
+    local variants, seen = {}, {}
+    local function add(v)
+        if v and #v > 2 and not seen[v] then seen[v] = true; variants[#variants + 1] = v end
+    end
+    local cleaned = clean_game_name(game_name)
+    add(cleaned)
+    add(cleaned:match("^(.-)%s*:") or cleaned:match("^(.-)%s+%-%s"))
+    add((tostring(game_name):gsub("\226\132\162", ""):gsub("\194\174", ""):gsub("\194\169", "")))
+    return variants
+end
+
 local GOOD_WORDS = {
     { "main theme", 45 },
     { "main menu", 40 },
@@ -179,6 +210,14 @@ local function score_candidate(c, game_name)
     if words > 0 then
         score = score + math.floor(60 * hits / words)
         if hits == words then score = score + 40 end
+    end
+    local game_nums = {}
+    for w in norm_words(game_name):gmatch("%S+") do
+        if w:match("^%d+$") then game_nums[w] = true end
+    end
+    for num in title:gmatch("%s(%d+)%f[%s]") do
+        local n = tonumber(num)
+        if n and n <= 50 and not game_nums[num] then score = score - 25 end
     end
     for _, g in ipairs(GOOD_WORDS) do
         if title:find(" " .. g[1] .. " ", 1, true) then
@@ -414,10 +453,18 @@ function get_theme_audio(app_id, force_refresh, game_name)
             local url = LOOPBACK_BASE .. entry.file .. "?v=" .. tostring(entry.ts or 0)
             return json.encode({ ok = true, url = url, title = entry.title, cached = true })
         end
-        local r, kh_err = khinsider_resolve(game_name, key)
+        local variants = name_variants(game_name)
+        local r, kh_err
+        for _, q in ipairs(variants) do
+            r, kh_err = khinsider_resolve(q, key)
+            if r and r.file then break end
+        end
         if not (r and r.file) then
             local sc_err
-            r, sc_err = sc_resolve(game_name, key)
+            for _, q in ipairs(variants) do
+                r, sc_err = sc_resolve(q, key)
+                if r and r.file then break end
+            end
             if not (r and r.file) then
                 logger:warn("no theme audio for " .. tostring(game_name) .. " (khinsider: " .. tostring(kh_err) .. ", soundcloud: " .. tostring(sc_err) .. ")")
                 return json.encode({ ok = false, error = sc_err or kh_err or "not_found" })
