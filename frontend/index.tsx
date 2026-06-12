@@ -1,4 +1,4 @@
-import { IconsModule, definePlugin, SliderField, callable, routerHook } from '@steambrew/client';
+import { IconsModule, definePlugin, callable, routerHook } from '@steambrew/client';
 import React, { useEffect, useState } from 'react';
 import { SEARCH_TOAST_CSS, SEARCH_TOAST_ICON, SETTINGS_CSS, SETTINGS_ICONS } from './_assets.generated';
 
@@ -311,6 +311,37 @@ const ToggleRow: React.FC<ToggleRowProps> = ({ icon, title, description, checked
   </div>
 );
 
+interface SliderRowProps {
+  icon: string;
+  title: string;
+  description: string;
+  value: number; // 0..100
+  onChange: (value: number) => void;
+}
+
+const SliderRow: React.FC<SliderRowProps> = ({ icon, title, description, value, onChange }) => (
+  <div className={`gts-set-row gts-vert${value > 0 ? ' gts-on' : ''}`}>
+    <div className="gts-set-head">
+      <span className="gts-set-ic" dangerouslySetInnerHTML={{ __html: icon }} />
+      <span className="gts-set-text">
+        <div className="gts-set-title">{title}</div>
+        <div className="gts-set-desc">{description}</div>
+      </span>
+      <span className="gts-set-val">{value}%</span>
+    </div>
+    <input
+      type="range"
+      className="gts-set-slider"
+      min={0}
+      max={100}
+      step={1}
+      value={value}
+      style={{ background: `linear-gradient(to right, #67c1f5 ${value}%, rgba(255,255,255,0.12) ${value}%)` }}
+      onChange={(ev: React.ChangeEvent<HTMLInputElement>) => onChange(Number(ev.target.value))}
+    />
+  </div>
+);
+
 const SettingsContent: React.FC = () => {
   const [percent, setPercent] = useState(Math.round(state.settings.volume * 100));
   const [loop, setLoop] = useState(state.settings.loop);
@@ -345,25 +376,14 @@ const SettingsContent: React.FC = () => {
   };
   return (
     <>
-    <SliderField
-      label="Music volume"
-      description={`Background theme music is set to ${percent}%.`}
-      min={0}
-      max={100}
-      step={1}
+    <style>{SETTINGS_CSS}</style>
+    <SliderRow
+      icon={SETTINGS_ICONS.volume}
+      title="Music volume"
+      description={percent > 0 ? 'Background theme music volume.' : 'Theme music is muted.'}
       value={percent}
-      showValue
-      valueSuffix="%"
-      notchCount={5}
-      notchLabels={[{ notchIndex: 0, label: '0%', value: 0 },
-        { notchIndex: 1, label: '25%', value: 25 },
-        { notchIndex: 2, label: '50%', value: 50 },
-        { notchIndex: 3, label: '75%', value: 75 },
-        { notchIndex: 4, label: '100%', value: 100 }]}
-      notchTicksVisible
       onChange={onSlider}
     />
-    <style>{SETTINGS_CSS}</style>
     <ToggleRow
       icon={SETTINGS_ICONS.repeat}
       title="Loop song"
