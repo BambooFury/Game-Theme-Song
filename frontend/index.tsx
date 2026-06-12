@@ -17,6 +17,7 @@ interface Settings {
   fade_seconds: number;
   search_suffix: string;
   loop: boolean;
+  max_seconds: number;
 }
 
 const DEFAULTS: Settings = {
@@ -25,6 +26,7 @@ const DEFAULTS: Settings = {
   fade_seconds: 1.5,
   search_suffix: ' theme song',
   loop: true,
+  max_seconds: 0,
 };
 
 
@@ -53,6 +55,19 @@ async function loadSettingsOnce() {
   }
 }
 
+let limitStopping = false;
+
+function applyLimit(a: HTMLAudioElement) {
+  const limit = state.settings.max_seconds;
+  if (limit <= 0 || a.paused || a.currentTime < limit) return;
+  if (state.settings.loop) {
+    a.currentTime = 0;
+  } else if (!limitStopping) {
+    limitStopping = true;
+    stopAudio();
+  }
+}
+
 function ensureAudio(): HTMLAudioElement {
   if (audioEl && document.body.contains(audioEl)) return audioEl;
   const a = document.createElement('audio');
@@ -60,6 +75,7 @@ function ensureAudio(): HTMLAudioElement {
   a.preload = 'none';
   a.loop = state.settings.loop;
   a.style.display = 'none';
+  a.ontimeupdate = () => applyLimit(a);
   document.body.appendChild(a);
   audioEl = a;
   return a;
@@ -98,6 +114,7 @@ function stopAudio(durationSec = state.settings.fade_seconds) {
 
 async function playUrl(url: string, mySeq: number, active: () => number): Promise<boolean> {
   if (mySeq !== active()) return false;
+  limitStopping = false;
   const a = ensureAudio();
   a.onerror = () => {
     const err = a.error;
@@ -225,7 +242,6 @@ async function playForApp(appId: number) {
   } catch (e) {
     warn('playForApp crashed', e);
   } finally {
-    // Hide only if no newer search has started in the meantime.
     if (mySeq === activeSeq) setSearching(false);
   }
 }
@@ -315,36 +331,51 @@ interface SliderRowProps {
   icon: string;
   title: string;
   description: string;
-  value: number; // 0..100
+  value: number;
+  valueLabel: string;
+  min?: number;
+  max?: number;
+  step?: number;
   onChange: (value: number) => void;
 }
 
-const SliderRow: React.FC<SliderRowProps> = ({ icon, title, description, value, onChange }) => (
-  <div className={`gts-set-row gts-vert${value > 0 ? ' gts-on' : ''}`}>
-    <div className="gts-set-head">
-      <span className="gts-set-ic" dangerouslySetInnerHTML={{ __html: icon }} />
-      <span className="gts-set-text">
-        <div className="gts-set-title">{title}</div>
-        <div className="gts-set-desc">{description}</div>
-      </span>
-      <span className="gts-set-val">{value}%</span>
+const SliderRow: React.FC<SliderRowProps> = ({ icon, title, description, value, valueLabel, min = 0, max = 100, step = 1, onChange }) => {
+  const fill = ((value - min) / (max - min)) * 100;
+  return (
+    <div className={`gts-set-row gts-vert${value > min ? ' gts-on' : ''}`}>
+      <div className="gts-set-head">
+        <span className="gts-set-ic" dangerouslySetInnerHTML={{ __html: icon }} />
+        <span className="gts-set-text">
+          <div className="gts-set-title">{title}</div>
+          <div className="gts-set-desc">{description}</div>
+        </span>
+        <span className="gts-set-val">{valueLabel}</span>
+      </div>
+      <input
+        type="range"
+        className="gts-set-slider"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        style={{ background: `linear-gradient(to right, #67c1f5 ${fill}%, rgba(255,255,255,0.12) ${fill}%)` }}
+        onChange={(ev: React.ChangeEvent<HTMLInputElement>) => onChange(Number(ev.target.value))}
+      />
     </div>
-    <input
-      type="range"
-      className="gts-set-slider"
-      min={0}
-      max={100}
-      step={1}
-      value={value}
-      style={{ background: `linear-gradient(to right, #67c1f5 ${value}%, rgba(255,255,255,0.12) ${value}%)` }}
-      onChange={(ev: React.ChangeEvent<HTMLInputElement>) => onChange(Number(ev.target.value))}
-    />
-  </div>
-);
+  );
+};
+
+const formatLimit = (sec: number) => {
+  if (sec <= 0) return 'Off';
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return m > 0 ? `${m}:${String(s).padStart(2, '0')}` : `${s}s`;
+};
 
 const SettingsContent: React.FC = () => {
   const [percent, setPercent] = useState(Math.round(state.settings.volume * 100));
   const [loop, setLoop] = useState(state.settings.loop);
+  const [maxSec, setMaxSec] = useState(state.settings.max_seconds);
   useEffect(() => {
     (async () => {
       try {
@@ -354,6 +385,7 @@ const SettingsContent: React.FC = () => {
           state.settings = { ...state.settings, ...s };
           setPercent(Math.round(state.settings.volume * 100));
           setLoop(state.settings.loop);
+          setMaxSec(state.settings.max_seconds);
           if (audioEl) audioEl.volume = state.settings.volume;
         }
       } catch (e) {
@@ -374,6 +406,12 @@ const SettingsContent: React.FC = () => {
     void setBackendSetting({ key: 'loop', value: checked }).catch(e => warn('save loop failed', e));
     if (audioEl) audioEl.loop = checked;
   };
+  const onLimit = (sec: number) => {
+    const v = Math.max(0, Math.round(sec));
+    setMaxSec(v);
+    state.settings.max_seconds = v;
+    void setBackendSetting({ key: 'max_seconds', value: v }).catch(e => warn('save max_seconds failed', e));
+  };
   return (
     <>
     <style>{SETTINGS_CSS}</style>
@@ -382,7 +420,21 @@ const SettingsContent: React.FC = () => {
       title="Music volume"
       description={percent > 0 ? 'Background theme music volume.' : 'Theme music is muted.'}
       value={percent}
+      valueLabel={`${percent}%`}
       onChange={onSlider}
+    />
+    <SliderRow
+      icon={SETTINGS_ICONS.timer}
+      title="Song length limit"
+      description={maxSec > 0
+        ? (loop ? `The song restarts after ${formatLimit(maxSec)}.` : `The song stops after ${formatLimit(maxSec)}.`)
+        : 'The full song plays.'}
+      value={maxSec}
+      valueLabel={formatLimit(maxSec)}
+      min={0}
+      max={300}
+      step={15}
+      onChange={onLimit}
     />
     <ToggleRow
       icon={SETTINGS_ICONS.repeat}

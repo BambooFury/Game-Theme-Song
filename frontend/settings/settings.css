@@ -48,7 +48,6 @@
   line-height: 1.4;
 }
 
-/* --- switch ----------------------------------------------------------- */
 .gts-set-switch {
   flex-shrink: 0;
   position: relative;
@@ -111,8 +110,7 @@
   border-radius: 999px;
   outline: none;
   cursor: pointer;
-  background: rgba(255,255,255,0.12); 
-}
+  background: rgba(255,255,255,0.12); }
 .gts-set-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
