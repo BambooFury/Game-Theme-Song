@@ -505,6 +505,50 @@ function set_setting(key, value)
     return json.encode({ ok = true })
 end
 
+local function file_size(path)
+    local f = io.open(path, "rb")
+    if not f then return 0 end
+    local size = f:seek("end") or 0
+    f:close()
+    return size
+end
+
+function get_cache_info()
+    local ok, result = pcall(function()
+        local count, bytes = 0, 0
+        for _, entry in pairs(cache) do
+            if entry and entry.file then
+                local path = AUDIO_DIR .. "\\" .. entry.file
+                if fs and fs.exists and fs.exists(path) then
+                    count = count + 1
+                    bytes = bytes + file_size(path)
+                end
+            end
+        end
+        return json.encode({ ok = true, count = count, bytes = bytes })
+    end)
+    if not ok then logger:warn("get_cache_info crashed: " .. tostring(result)); return json.encode({ ok = false, error = "internal_error" }) end
+    return result
+end
+
+function clear_audio_cache()
+    local ok, result = pcall(function()
+        local removed = 0
+        for key, entry in pairs(cache) do
+            if entry and entry.file then
+                local path = AUDIO_DIR .. "\\" .. entry.file
+                if fs and fs.exists and fs.exists(path) and pcall(fs.remove, path) then removed = removed + 1 end
+            end
+            for _, e in ipairs(AUDIO_EXTS) do pcall(fs.remove, AUDIO_DIR .. "\\" .. tostring(key) .. "." .. e) end
+        end
+        cache = {}
+        save_cache()
+        return json.encode({ ok = true, removed = removed })
+    end)
+    if not ok then logger:warn("clear_audio_cache crashed: " .. tostring(result)); return json.encode({ ok = false, error = "internal_error" }) end
+    return result
+end
+
 function log_frontend(message)
     logger:info("[frontend] " .. tostring(message))
     return json.encode({ ok = true })

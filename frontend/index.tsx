@@ -10,6 +10,8 @@ const invalidateAudio = callable<[{ app_id: number | string }], string>('invalid
 const getBackendSettings = callable<NoArgs, string>('get_settings');
 const setBackendSetting = callable<[{ key: string; value: Primitive }], string>('set_setting');
 const logFrontend = callable<[{ message: string }], string>('log_frontend');
+const getCacheInfo = callable<NoArgs, string>('get_cache_info');
+const clearAudioCache = callable<NoArgs, string>('clear_audio_cache');
 
 interface Settings {
   enabled: boolean;
@@ -358,6 +360,26 @@ const ToggleRow: React.FC<ToggleRowProps> = ({ icon, title, description, checked
   </div>
 );
 
+interface ButtonRowProps {
+  icon: string;
+  title: string;
+  description: string;
+  buttonLabel: string;
+  disabled?: boolean;
+  onClick: () => void;
+}
+
+const ButtonRow: React.FC<ButtonRowProps> = ({ icon, title, description, buttonLabel, disabled, onClick }) => (
+  <div className="gts-set-row gts-static">
+    <span className="gts-set-ic" dangerouslySetInnerHTML={{ __html: icon }} />
+    <span className="gts-set-text">
+      <div className="gts-set-title">{title}</div>
+      <div className="gts-set-desc">{description}</div>
+    </span>
+    <button className="gts-set-btn" disabled={disabled} onClick={onClick}>{buttonLabel}</button>
+  </div>
+);
+
 interface SliderRowProps {
   icon: string;
   title: string;
@@ -408,7 +430,23 @@ const SettingsContent: React.FC = () => {
   const [loop, setLoop] = useState(state.settings.loop);
   const [maxSec, setMaxSec] = useState(state.settings.max_seconds);
   const [stopOnLaunch, setStopOnLaunch] = useState(state.settings.stop_on_launch);
+  const [cacheCount, setCacheCount] = useState<number | null>(null);
+  const [cacheBytes, setCacheBytes] = useState(0);
+  const [clearing, setClearing] = useState(false);
+  const refreshCacheInfo = async () => {
+    try {
+      const raw = await getCacheInfo();
+      const info = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      if (info?.ok) {
+        setCacheCount(info.count ?? 0);
+        setCacheBytes(info.bytes ?? 0);
+      }
+    } catch (e) {
+      warn('failed to load cache info', e);
+    }
+  };
   useEffect(() => {
+    void refreshCacheInfo();
     (async () => {
       try {
         const raw = await getBackendSettings();
@@ -444,6 +482,21 @@ const SettingsContent: React.FC = () => {
     setMaxSec(v);
     state.settings.max_seconds = v;
     void setBackendSetting({ key: 'max_seconds', value: v }).catch(e => warn('save max_seconds failed', e));
+  };
+  const onClearCache = async () => {
+    if (clearing) return;
+    setClearing(true);
+    try {
+      await clearAudioCache();
+      stopAudio(0);
+      currentAppId = null;
+      lastDetectedAppId = null;
+      await refreshCacheInfo();
+    } catch (e) {
+      warn('clear cache failed', e);
+    } finally {
+      setClearing(false);
+    }
   };
   const onStopOnLaunch = (checked: boolean) => {
     setStopOnLaunch(checked);
@@ -487,6 +540,14 @@ const SettingsContent: React.FC = () => {
       description={stopOnLaunch ? 'Theme music stops when you launch a game.' : 'Theme music keeps playing when a game starts.'}
       checked={stopOnLaunch}
       onChange={onStopOnLaunch}
+    />
+    <ButtonRow
+      icon={SETTINGS_ICONS.trash}
+      title="Clear downloaded music"
+      description={cacheCount === null ? 'Checking…' : cacheCount === 0 ? 'Nothing downloaded yet.' : `${cacheCount} ${cacheCount === 1 ? 'track' : 'tracks'} · ${(cacheBytes / 1048576).toFixed(1)} MB on disk`}
+      buttonLabel={clearing ? 'Clearing…' : 'Clear'}
+      disabled={clearing || cacheCount === 0}
+      onClick={() => { void onClearCache(); }}
     />
     </>
   );

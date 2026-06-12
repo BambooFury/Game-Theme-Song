@@ -122,3 +122,23 @@
   cursor: grab;
 }
 .gts-set-slider::-webkit-slider-thumb:active { cursor: grabbing; }
+
+.gts-set-row.gts-static { cursor: default; }
+.gts-set-row.gts-static:active { transform: none; }
+
+.gts-set-btn {
+  flex-shrink: 0;
+  padding: 7px 16px;
+  border-radius: 9px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.07);
+  color: #dfe3e6;
+  font-family: 'Motiva Sans','Segoe UI',Arial,sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease, opacity 0.2s ease;
+}
+.gts-set-btn:active { transform: scale(0.97); }
+.gts-set-btn:disabled { opacity: 0.45; cursor: default; }
