@@ -5,7 +5,4 @@ pnpm-lock.yaml
 .vscode/
 settings.json
 cache.json
-queue/
-yt-dlp.exe
-yt-dlp.exe.part
-*.zip
+webkit/_assets.generated.ts

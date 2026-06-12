@@ -1,4 +1,4 @@
-﻿import { IconsModule, definePlugin, SliderField, callable, routerHook } from '@steambrew/client';
+import { IconsModule, definePlugin, SliderField, callable } from '@steambrew/client';
 import React, { useEffect, useState } from 'react';
 
 type Primitive = string | number | boolean;
@@ -8,7 +8,6 @@ const getThemeAudio = callable<[{ app_id: number | string; game_name: string; fo
 const invalidateAudio = callable<[{ app_id: number | string }], string>('invalidate_audio');
 const getBackendSettings = callable<NoArgs, string>('get_settings');
 const setBackendSetting = callable<[{ key: string; value: Primitive }], string>('set_setting');
-const getIconDataUri = callable<[{ name: string }], string>('get_icon_data_uri');
 const logFrontend = callable<[{ message: string }], string>('log_frontend');
 
 interface Settings {
@@ -25,13 +24,11 @@ const DEFAULTS: Settings = {
   search_suffix: ' theme song',
 };
 
-const WELCOME_FLAG = 'gts_welcomed_v1';
 
 const state: { settings: Settings } = { settings: { ...DEFAULTS } };
-const log = (...a: unknown[]) => console.log('[GameThemeSong]', ...a);
 const warn = (...a: unknown[]) => console.warn('[GameThemeSong]', ...a);
-const backendLog = (message: string) => {
-  log(message);
+const reportError = (message: string) => {
+  warn(message);
   void logFrontend({ message }).catch(() => {});
 };
 
@@ -39,8 +36,6 @@ let audioEl: HTMLAudioElement | null = null;
 let fadeTimer: ReturnType<typeof setInterval> | null = null;
 let activeSeq = 0;
 let currentAppId: number | null = null;
-let welcomePatch: any = null;
-let welcomeInstalled = false;
 
 async function loadSettingsOnce() {
   try {
@@ -53,41 +48,6 @@ async function loadSettingsOnce() {
   } catch (e) {
     warn('failed to load settings on start', e);
   }
-}
-
-interface ModalIcons {
-  music: string;
-  question: string;
-  questionDark: string;
-  exit: string;
-  exitDark: string;
-}
-
-const modalIcons: ModalIcons = {
-  music: '',
-  question: '',
-  questionDark: '',
-  exit: '',
-  exitDark: '',
-};
-
-async function loadModalIcons(): Promise<ModalIcons> {
-  const entries: Array<[keyof ModalIcons, string]> = [['music', 'music-note.svg'],
-    ['question', 'question.svg'],
-    ['questionDark', 'question-dark.svg'],
-    ['exit', 'exit.svg'],
-    ['exitDark', 'exit-dark.svg']];
-  await Promise.all(entries.map(async ([key, name]) => {
-    if (modalIcons[key]) return;
-    try {
-      const raw = await getIconDataUri({ name });
-      const resp = typeof raw === 'string' ? JSON.parse(raw) : raw;
-      if (resp?.ok && resp.data_uri) modalIcons[key] = String(resp.data_uri);
-    } catch (e) {
-      warn('failed to load icon', name, e);
-    }
-  }));
-  return modalIcons;
 }
 
 function ensureAudio(): HTMLAudioElement {
@@ -138,7 +98,7 @@ async function playUrl(url: string, mySeq: number, active: () => number): Promis
   const a = ensureAudio();
   a.onerror = () => {
     const err = a.error;
-    backendLog(`audio element error: code=${err?.code ?? '?'} message=${err?.message ?? ''} networkState=${a.networkState} readyState=${a.readyState}`);
+    reportError(`audio element error: code=${err?.code ?? '?'} message=${err?.message ?? ''} networkState=${a.networkState} readyState=${a.readyState}`);
   };
   if (a.src !== url) {
     a.src = url;
@@ -156,23 +116,18 @@ async function playUrl(url: string, mySeq: number, active: () => number): Promis
   };
   let result = await tryPlay();
   if (result !== 'ok' && result.startsWith('NotAllowedError')) {
-    backendLog(`autoplay blocked (${result}), retrying muted`);
     a.muted = true;
     result = await tryPlay();
-    if (result === 'ok') {
-      a.muted = false;
-      backendLog('muted-start workaround succeeded');
-    }
+    if (result === 'ok') a.muted = false;
   }
   if (result !== 'ok') {
-    backendLog(`audio play failed: ${result} (mediaError=${a.error?.code ?? 'none'})`);
+    reportError(`audio play failed: ${result} (mediaError=${a.error?.code ?? 'none'})`);
     return false;
   }
   if (mySeq !== active()) {
     a.pause();
     return false;
   }
-  backendLog('playback started');
   fadeTo(state.settings.volume, state.settings.fade_seconds);
   return true;
 }
@@ -197,134 +152,6 @@ async function resolveGameName(appId: number): Promise<string | null> {
   return name;
 }
 
-function removeWelcomePatch() {
-  if (!welcomePatch) return;
-  try { routerHook.removePatch('/library', welcomePatch); } catch {}
-  welcomePatch = null;
-  welcomeInstalled = false;
-}
-
-function installWelcomePatch() {
-  if (welcomeInstalled) return;
-  welcomeInstalled = true;
-  welcomePatch = routerHook.addPatch('/library', (props: any) => {
-    const SP = (window as any).SP_REACT as typeof React;
-    if (!SP) return props;
-    return {
-    ...props,
-      children: SP.createElement(SP.Fragment, null, props.children, SP.createElement(WelcomeModal)),
-    };
-  });
-}
-
-function maybeShowWelcome() {
-  try {
-    if (localStorage.getItem(WELCOME_FLAG)) return;
-  } catch {}
-  backendLog('welcome modal: showing');
-  installWelcomePatch();
-}
-
-const WelcomeModal: React.FC = () => {
-  const [show, setShow] = useState(false);
-  const [phase, setPhase] = useState<'intro' | 'info'>('intro');
-  const [icons, setIcons] = useState<ModalIcons>({ ...modalIcons });
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const loadedIcons = await loadModalIcons();
-        if (!cancelled) setIcons({ ...loadedIcons });
-      } catch {}
-      try {
-        if (localStorage.getItem(WELCOME_FLAG)) {
-          if (!cancelled) removeWelcomePatch();
-          return;
-        }
-      } catch {}
-      if (!cancelled) setShow(true);
-    })();
-    return () => { cancelled = true; };
-  }, []);
-
-  if (!show) return null;
-
-  const close = () => {
-    try { localStorage.setItem(WELCOME_FLAG, '1'); } catch {}
-    setShow(false);
-    removeWelcomePatch();
-  };
-  const showInfo = () => setPhase('info');
-  const backToIntro = () => setPhase('intro');
-  const headerIcon = phase === 'info' ? icons.question : icons.music;
-  const iconAlt = phase === 'info' ? 'Help' : 'Music';
-  const buttonBaseStyle = { flex: 1, minHeight: 47, padding: '0 14px', border: 0, borderRadius: 8, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: '18px' };
-  const primaryButtonStyle = { ...buttonBaseStyle, background: '#67c1f5', color: '#111' };
-  const secondaryButtonStyle = { ...buttonBaseStyle, background: '#2a2a2a', color: '#ddd' };
-  const buttonLabel = (icon: string, text: string) => (
-    <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, height: 18, lineHeight: '18px' }}>
-      {icon && <img src={icon} alt="" style={{ width: 15, height: 15, display: 'block', objectFit: 'contain', flex: '0 0 15px' }} />}
-      <span style={{ display: 'block', lineHeight: '18px' }}>{text}</span>
-    </span>
-  );
-  const headerBg = phase === 'info' ? 'rgba(245,200,75,.13)' : 'rgba(103,193,245,.13)';
-  const headerBorder = phase === 'info' ? '1px solid rgba(245,200,75,.34)' : '1px solid rgba(103,193,245,.3)';
-  const headerShadow = phase === 'info' ? '0 0 32px rgba(245,200,75,.18)' : '0 0 32px rgba(103,193,245,.18)';
-
-  return (
-    <>
-      <div style={{ position: 'fixed', inset: 0, zIndex: 999998, background: 'rgba(0,0,0,.82)' }} />
-      <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', zIndex: 999999, width: 460, background: '#101010', border: '1px solid rgba(255,255,255,.14)', borderRadius: 12, color: '#ddd', fontFamily: 'Arial,sans-serif', boxShadow: '0 22px 75px rgba(0,0,0,.72)', overflow: 'hidden' }}>
-        <div style={{ padding: '28px 28px 12px', textAlign: 'center' }}>
-          <div style={{ width: 54, height: 54, margin: '0 auto 14px', borderRadius: '50%', background: headerBg, border: headerBorder, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: headerShadow }}>
-            {headerIcon ? (
-              <img src={headerIcon} alt={iconAlt} style={{ width: 32, height: 32, display: 'block', objectFit: 'contain' }} />
-            ) : (
-              <div style={{ width: 34, height: 34, borderRadius: '50%', background: '#67c1f5' }} />
-            )}
-          </div>
-          <h2 style={{ margin: '0 0 8px', color: '#fff', fontSize: 22, lineHeight: 1.2 }}>
-            {phase === 'info' ? 'How It Works' : 'Game Theme Song'}
-          </h2>
-          <div style={{ fontSize: 12, color: '#8d8d8d', textTransform: 'uppercase', letterSpacing: .5 }}>
-            {phase === 'intro' && 'ready to play'}
-            {phase === 'info' && 'quick guide'}
-          </div>
-        </div>
-        <div style={{ padding: '10px 28px 8px', fontSize: 14, lineHeight: 1.55, color: '#c7c7c7' }}>
-          {phase === 'intro' && (
-            <div>
-              Game Theme Song plays each game's theme music in the background when you open its page in your Steam Library. No setup needed — everything works out of the box.
-              <div style={{ marginTop: 10, color: '#969696', fontSize: 13 }}>You can adjust the music volume anytime in the plugin settings.</div>
-            </div>
-          )}
-          {phase === 'info' && (
-            <div>
-              Open a game in your Steam Library and the plugin will search for a matching theme song, then play it in the background. The first play for a game can take a few seconds because the plugin has to find a fresh audio link.
-              <div style={{ marginTop: 10 }}>After that, the result is cached for a while, so returning to the same game starts much faster.</div>
-            </div>
-          )}
-        </div>
-        <div style={{ display: 'flex', gap: 10, padding: '24px 28px 28px' }}>
-          {phase === 'intro' && (
-            <>
-              <button onClick={showInfo} style={secondaryButtonStyle}>{buttonLabel(icons.question, 'How It Works')}</button>
-              <button onClick={close} style={primaryButtonStyle}>{buttonLabel(icons.exitDark, 'Got It')}</button>
-            </>
-          )}
-          {phase === 'info' && (
-            <>
-              <button onClick={backToIntro} style={secondaryButtonStyle}>Back</button>
-              <button onClick={close} style={primaryButtonStyle}>{buttonLabel(icons.exitDark, 'Got It')}</button>
-            </>
-          )}
-        </div>
-      </div>
-    </>
-  );
-};
-
 async function playForApp(appId: number) {
   try {
     if (!state.settings.enabled) return;
@@ -345,14 +172,12 @@ async function playForApp(appId: number) {
       return;
     }
 
-    backendLog(`backend response ${JSON.stringify(resp)}`);
     if (mySeq !== activeSeq) return;
     if (!resp?.ok || !resp.url) {
       warn('no audio for', name, resp?.error);
       return;
     }
 
-    backendLog(`playing ${name} ${resp.title ?? ''}`);
     const ok = await playUrl(resp.url, mySeq, getSeq);
     if (ok || mySeq !== activeSeq) return;
 
@@ -408,7 +233,6 @@ function pollOnce() {
   try { id = detectAppId(); } catch { return; }
   if (id === lastDetectedAppId) return;
   lastDetectedAppId = id;
-  backendLog(`detected app id ${id ?? 'none'}`);
 
   if (id !== currentAppId) {
     stopAudio();
@@ -477,16 +301,11 @@ const SettingsContent: React.FC = () => {
 };
 
 export default definePlugin(() => {
-  backendLog('frontend mounted');
   void loadSettingsOnce();
-  setTimeout(() => maybeShowWelcome(), 1500);
   startPolling();
   return {
     title: 'Game Theme Song',
     icon: <IconsModule.Music />,
     content: <SettingsContent />,
-    onDismount() {
-      removeWelcomePatch();
-    },
   };
 });

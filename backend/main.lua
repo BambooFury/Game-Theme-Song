@@ -217,7 +217,6 @@ local function download_file(key, ext, url, ua)
         local detail = err or (result and ("status_" .. tostring(result.status))) or "unknown"
         return nil, "download_failed: " .. tostring(detail)
     end
-    logger:info("downloaded " .. filename .. " (" .. tostring(result.bytes_written) .. " bytes)")
     return filename, nil
 end
 
@@ -289,12 +288,10 @@ local function khinsider_resolve(game_name, key)
     if not body then return nil, "khinsider_search_failed: " .. tostring(err) end
     local album = khinsider_pick_album(body, query)
     if not album then return nil, "khinsider_no_album" end
-    logger:info("khinsider album: " .. album.title)
     local album_body, aerr = khinsider_get(KHINSIDER_BASE .. album.href)
     if not album_body then return nil, "khinsider_album_failed: " .. tostring(aerr) end
     local track = khinsider_pick_track(album_body)
     if not track then return nil, "khinsider_no_tracks" end
-    logger:info("khinsider track: " .. track.name)
     local track_body, terr = khinsider_get(KHINSIDER_BASE .. track.href)
     if not track_body then return nil, "khinsider_track_failed: " .. tostring(terr) end
     local mp3 = track_body:match('href="(https://[^"]+%.mp3)"')
@@ -330,7 +327,6 @@ local function sc_api(path_and_query)
         local cid, err = sc_fetch_client_id()
         if not cid then return nil, err end
         sc_client_id = cid
-        logger:info("soundcloud client_id acquired")
     end
     local sep = path_and_query:find("?", 1, true) and "&" or "?"
     local url = "https://api-v2.soundcloud.com" .. path_and_query .. sep .. "client_id=" .. sc_client_id
@@ -351,7 +347,6 @@ end
 
 local function sc_resolve(game_name, key)
     local query = game_name .. (settings.search_suffix or "")
-    logger:info("soundcloud search: " .. query)
     local data, err = sc_api("/search/tracks?q=" .. url_encode(query) .. "&limit=15")
     if not data or type(data.collection) ~= "table" then return nil, err or "sc_search_failed" end
     local candidates = {}
@@ -376,7 +371,6 @@ local function sc_resolve(game_name, key)
     order_candidates(candidates, game_name)
     for i = 1, math.min(#candidates, 3) do
         local c = candidates[i]
-        logger:info("sc candidate score=" .. tostring(c.score) .. " (" .. tostring(c.seconds) .. "s) " .. c.title)
         local sep = c.stream_api:find("?", 1, true) and "&" or "?"
         local resp = http.request(c.stream_api .. sep .. "client_id=" .. tostring(sc_client_id), { user_agent = SC_UA })
         local meta = (resp and resp.status == 200 and resp.body) and safe_decode(resp.body) or nil
@@ -400,10 +394,10 @@ function get_theme_audio(app_id, force_refresh, game_name)
         end
         local r, kh_err = khinsider_resolve(game_name, key)
         if not (r and r.file) then
-            logger:info("khinsider failed (" .. tostring(kh_err) .. "), trying soundcloud")
             local sc_err
             r, sc_err = sc_resolve(game_name, key)
             if not (r and r.file) then
+                logger:warn("no theme audio for " .. tostring(game_name) .. " (khinsider: " .. tostring(kh_err) .. ", soundcloud: " .. tostring(sc_err) .. ")")
                 return json.encode({ ok = false, error = sc_err or kh_err or "not_found" })
             end
         end
@@ -451,7 +445,6 @@ local function on_load()
     load_state()
     millennium.ready()
     cleanup_legacy_worker()
-    logger:info("Game Theme Song loaded (khinsider + soundcloud download)")
 end
 
 local function on_unload()
