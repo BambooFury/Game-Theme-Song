@@ -27,7 +27,7 @@ local LEGACY_FILES = {
     QUEUE_DIR .. "\\ytdlp-download.done",
     QUEUE_DIR .. "\\ytdlp-install.ps1",
 }
-local CONFIG_VERSION = 11
+local CONFIG_VERSION = 12
 
 local DEFAULT_SETTINGS = {
     config_version = CONFIG_VERSION,
@@ -37,6 +37,7 @@ local DEFAULT_SETTINGS = {
     search_suffix = " theme song",
     loop = true,
     max_seconds = 0,
+    stop_on_launch = true,
 }
 
 local cache = {}
@@ -205,6 +206,19 @@ end
 
 local AUDIO_EXTS = { "webm", "m4a", "mp3" }
 
+local function looks_like_audio(path)
+    local f = io.open(path, "rb")
+    if not f then return false, "unreadable" end
+    local head = f:read(16) or ""
+    f:close()
+    if #head < 4 then return false, "too_short" end
+    local sig3, sig4 = head:sub(1, 3), head:sub(1, 4)
+    if sig3 == "ID3" or sig4 == "OggS" or sig4 == "fLaC" or sig4 == "RIFF" then return true end
+    local b1, b2 = head:byte(1, 2)
+    if b1 == 255 and b2 and b2 >= 224 then return true end
+    return false, head:gsub("%c", "."):sub(1, 16)
+end
+
 local function download_file(key, ext, url, ua)
     if not fs or not http or not http.download then return nil, "download_unsupported" end
     pcall(fs.create_directories, AUDIO_DIR)
@@ -218,6 +232,12 @@ local function download_file(key, ext, url, ua)
         pcall(fs.remove, path)
         local detail = err or (result and ("status_" .. tostring(result.status))) or "unknown"
         return nil, "download_failed: " .. tostring(detail)
+    end
+    local valid, head = looks_like_audio(path)
+    if not valid then
+        pcall(fs.remove, path)
+        logger:warn("downloaded file is not audio (head=" .. tostring(head) .. ", bytes=" .. tostring(result.bytes_written) .. ") url=" .. tostring(url))
+        return nil, "not_audio"
     end
     return filename, nil
 end

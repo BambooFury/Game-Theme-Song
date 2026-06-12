@@ -18,6 +18,7 @@ interface Settings {
   search_suffix: string;
   loop: boolean;
   max_seconds: number;
+  stop_on_launch: boolean;
 }
 
 const DEFAULTS: Settings = {
@@ -27,6 +28,7 @@ const DEFAULTS: Settings = {
   search_suffix: ' theme song',
   loop: true,
   max_seconds: 0,
+  stop_on_launch: true,
 };
 
 
@@ -112,6 +114,17 @@ function stopAudio(durationSec = state.settings.fade_seconds) {
   });
 }
 
+async function probeUrl(url: string) {
+  try {
+    const r = await fetch(url);
+    const buf = new Uint8Array(await r.arrayBuffer());
+    const hex = Array.from(buf.slice(0, 16)).map(b => b.toString(16).padStart(2, '0')).join(' ');
+    reportError(`probe status=${r.status} type=${r.headers.get('content-type')} size=${buf.length} head=${hex}`);
+  } catch (e: any) {
+    reportError(`probe failed: ${e?.name ?? ''} ${e?.message ?? e}`);
+  }
+}
+
 async function playUrl(url: string, mySeq: number, active: () => number): Promise<boolean> {
   if (mySeq !== active()) return false;
   limitStopping = false;
@@ -143,6 +156,7 @@ async function playUrl(url: string, mySeq: number, active: () => number): Promis
   }
   if (result !== 'ok') {
     reportError(`audio play failed: ${result} (mediaError=${a.error?.code ?? 'none'})`);
+    void probeUrl(url);
     return false;
   }
   if (mySeq !== active()) {
@@ -308,6 +322,23 @@ function startPolling() {
   setTimeout(pollOnce, 100);
 }
 
+let launchHook: { unregister?: () => void } | null = null;
+
+function registerLaunchStop() {
+  try {
+    const sc = (window as any).SteamClient;
+    if (!sc?.Apps?.RegisterForGameActionStart) {
+      warn('RegisterForGameActionStart unavailable');
+      return;
+    }
+    launchHook = sc.Apps.RegisterForGameActionStart(() => {
+      if (state.settings.stop_on_launch) stopAudio(0.4);
+    });
+  } catch (e) {
+    warn('failed to register launch listener', e);
+  }
+}
+
 interface ToggleRowProps {
   icon: string;
   title: string;
@@ -376,6 +407,7 @@ const SettingsContent: React.FC = () => {
   const [percent, setPercent] = useState(Math.round(state.settings.volume * 100));
   const [loop, setLoop] = useState(state.settings.loop);
   const [maxSec, setMaxSec] = useState(state.settings.max_seconds);
+  const [stopOnLaunch, setStopOnLaunch] = useState(state.settings.stop_on_launch);
   useEffect(() => {
     (async () => {
       try {
@@ -386,6 +418,7 @@ const SettingsContent: React.FC = () => {
           setPercent(Math.round(state.settings.volume * 100));
           setLoop(state.settings.loop);
           setMaxSec(state.settings.max_seconds);
+          setStopOnLaunch(state.settings.stop_on_launch);
           if (audioEl) audioEl.volume = state.settings.volume;
         }
       } catch (e) {
@@ -411,6 +444,11 @@ const SettingsContent: React.FC = () => {
     setMaxSec(v);
     state.settings.max_seconds = v;
     void setBackendSetting({ key: 'max_seconds', value: v }).catch(e => warn('save max_seconds failed', e));
+  };
+  const onStopOnLaunch = (checked: boolean) => {
+    setStopOnLaunch(checked);
+    state.settings.stop_on_launch = checked;
+    void setBackendSetting({ key: 'stop_on_launch', value: checked }).catch(e => warn('save stop_on_launch failed', e));
   };
   return (
     <>
@@ -443,6 +481,13 @@ const SettingsContent: React.FC = () => {
       checked={loop}
       onChange={onLoop}
     />
+    <ToggleRow
+      icon={SETTINGS_ICONS.gamepad}
+      title="Stop on game launch"
+      description={stopOnLaunch ? 'Theme music stops when you launch a game.' : 'Theme music keeps playing when a game starts.'}
+      checked={stopOnLaunch}
+      onChange={onStopOnLaunch}
+    />
     </>
   );
 };
@@ -451,12 +496,14 @@ export default definePlugin(() => {
   void loadSettingsOnce();
   routerHook.addGlobalComponent('GTSSearchToast', SearchToast);
   startPolling();
+  registerLaunchStop();
   return {
     title: 'Game Theme Song',
     icon: <IconsModule.Music />,
     content: <SettingsContent />,
     onDismount() {
       routerHook.removeGlobalComponent('GTSSearchToast');
+      launchHook?.unregister?.();
     },
   };
 });
