@@ -36,9 +36,6 @@ const backendLog = (message: string) => {
 };
 
 let audioEl: HTMLAudioElement | null = null;
-let embedEl: HTMLIFrameElement | null = null;
-let embedReady = false;
-let embedMsgHandler: ((ev: MessageEvent) => void) | null = null;
 let fadeTimer: ReturnType<typeof setInterval> | null = null;
 let activeSeq = 0;
 let currentAppId: number | null = null;
@@ -128,60 +125,7 @@ function fadeTo(target: number, durationSec: number, onComplete?: () => void) {
   }, (durationSec * 1000) / ticks);
 }
 
-function embedCommand(func: string, args: unknown[] = []) {
-  try {
-    embedEl?.contentWindow?.postMessage(JSON.stringify({ event: 'command', func, args }), '*');
-  } catch {}
-}
-
-function stopEmbed() {
-  if (embedMsgHandler) {
-    window.removeEventListener('message', embedMsgHandler);
-    embedMsgHandler = null;
-  }
-  if (!embedEl) return;
-  embedCommand('stopVideo');
-  embedEl.remove();
-  embedEl = null;
-  embedReady = false;
-}
-
-function playEmbed(videoId: string, mySeq: number, active: () => number) {
-  stopEmbed();
-  if (mySeq !== active()) return;
-  const f = document.createElement('iframe');
-  f.id = 'game-theme-song-embed';
-  f.style.cssText = 'position:absolute;width:1px;height:1px;left:-9999px;top:-9999px;border:0;';
-  f.allow = 'autoplay; encrypted-media';
-  f.src = `https://www.youtube.com/embed/${videoId}?enablejsapi=1&autoplay=1&loop=1&playlist=${videoId}&controls=0`;
-  document.body.appendChild(f);
-  embedEl = f;
-  embedReady = false;
-  embedMsgHandler = (ev: MessageEvent) => {
-    if (!embedEl || ev.source !== embedEl.contentWindow) return;
-    let data: any;
-    try { data = typeof ev.data === 'string' ? JSON.parse(ev.data) : ev.data; } catch { return; }
-    if (data?.event === 'onReady') {
-      embedReady = true;
-      if (mySeq !== active()) { stopEmbed(); return; }
-      embedCommand('setVolume', [Math.round(state.settings.volume * 100)]);
-      embedCommand('unMute');
-      embedCommand('playVideo');
-      backendLog('embed playback started');
-    } else if (data?.event === 'onError') {
-      backendLog(`embed player error: ${data?.info ?? '?'}`);
-    }
-  };
-  window.addEventListener('message', embedMsgHandler);
-  f.addEventListener('load', () => {
-    try {
-      f.contentWindow?.postMessage(JSON.stringify({ event: 'listening', id: 'game-theme-song-embed' }), '*');
-    } catch {}
-  });
-}
-
 function stopAudio(durationSec = state.settings.fade_seconds) {
-  stopEmbed();
   if (!audioEl) return;
   audioEl.onerror = null;
   fadeTo(0, durationSec, () => {
@@ -403,14 +347,8 @@ async function playForApp(appId: number) {
 
     backendLog(`backend response ${JSON.stringify(resp)}`);
     if (mySeq !== activeSeq) return;
-    if (!resp?.ok || (!resp.url && !resp.video_id)) {
+    if (!resp?.ok || !resp.url) {
       warn('no audio for', name, resp?.error);
-      return;
-    }
-
-    if (resp.embed && resp.video_id) {
-      backendLog(`playing ${name} via embed ${resp.video_id}`);
-      playEmbed(String(resp.video_id), mySeq, getSeq);
       return;
     }
 
@@ -422,11 +360,7 @@ async function playForApp(appId: number) {
     const raw2 = await getThemeAudio({ app_id: appId, game_name: name, force_refresh: true });
     const r2 = typeof raw2 === 'string' ? JSON.parse(raw2) : raw2;
     if (mySeq !== activeSeq || !r2?.ok) return;
-    if (r2.embed && r2.video_id) {
-      backendLog(`playing ${name} via embed ${r2.video_id}`);
-      playEmbed(String(r2.video_id), mySeq, getSeq);
-      return;
-    }
+
     if (r2.url) await playUrl(r2.url, mySeq, getSeq);
   } catch (e) {
     warn('playForApp crashed', e);
@@ -519,7 +453,6 @@ const SettingsContent: React.FC = () => {
     state.settings.volume = vol;
     void setBackendSetting({ key: 'volume', value: vol }).catch(e => warn('save volume failed', e));
     if (audioEl && !audioEl.paused) audioEl.volume = vol;
-    if (embedEl && embedReady) embedCommand('setVolume', [Math.round(vol * 100)]);
   };
   return (
     <SliderField
