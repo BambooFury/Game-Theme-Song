@@ -1,6 +1,6 @@
 import { IconsModule, definePlugin, SliderField, callable, routerHook } from '@steambrew/client';
 import React, { useEffect, useState } from 'react';
-import { SEARCH_TOAST_CSS, SEARCH_TOAST_ICON } from './_assets.generated';
+import { SEARCH_TOAST_CSS, SEARCH_TOAST_ICON, SETTINGS_CSS, SETTINGS_ICONS } from './_assets.generated';
 
 type Primitive = string | number | boolean;
 type NoArgs = [];
@@ -16,6 +16,7 @@ interface Settings {
   volume: number;
   fade_seconds: number;
   search_suffix: string;
+  loop: boolean;
 }
 
 const DEFAULTS: Settings = {
@@ -23,6 +24,7 @@ const DEFAULTS: Settings = {
   volume: 0.35,
   fade_seconds: 1.5,
   search_suffix: ' theme song',
+  loop: true,
 };
 
 
@@ -56,7 +58,7 @@ function ensureAudio(): HTMLAudioElement {
   const a = document.createElement('audio');
   a.id = 'game-theme-song-audio';
   a.preload = 'none';
-  a.loop = true;
+  a.loop = state.settings.loop;
   a.style.display = 'none';
   document.body.appendChild(a);
   audioEl = a;
@@ -105,6 +107,7 @@ async function playUrl(url: string, mySeq: number, active: () => number): Promis
     a.src = url;
     a.load();
   }
+  a.loop = state.settings.loop;
   a.volume = 0;
   a.muted = false;
   const tryPlay = async (): Promise<string> => {
@@ -289,8 +292,28 @@ function startPolling() {
   setTimeout(pollOnce, 100);
 }
 
+interface ToggleRowProps {
+  icon: string;
+  title: string;
+  description: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}
+
+const ToggleRow: React.FC<ToggleRowProps> = ({ icon, title, description, checked, onChange }) => (
+  <div className={`gts-set-row${checked ? ' gts-on' : ''}`} onClick={() => onChange(!checked)}>
+    <span className="gts-set-ic" dangerouslySetInnerHTML={{ __html: icon }} />
+    <span className="gts-set-text">
+      <div className="gts-set-title">{title}</div>
+      <div className="gts-set-desc">{description}</div>
+    </span>
+    <span className="gts-set-switch"><span className="gts-set-knob" /></span>
+  </div>
+);
+
 const SettingsContent: React.FC = () => {
   const [percent, setPercent] = useState(Math.round(state.settings.volume * 100));
+  const [loop, setLoop] = useState(state.settings.loop);
   useEffect(() => {
     (async () => {
       try {
@@ -299,6 +322,7 @@ const SettingsContent: React.FC = () => {
         if (s && typeof s === 'object') {
           state.settings = { ...state.settings, ...s };
           setPercent(Math.round(state.settings.volume * 100));
+          setLoop(state.settings.loop);
           if (audioEl) audioEl.volume = state.settings.volume;
         }
       } catch (e) {
@@ -313,7 +337,14 @@ const SettingsContent: React.FC = () => {
     void setBackendSetting({ key: 'volume', value: vol }).catch(e => warn('save volume failed', e));
     if (audioEl && !audioEl.paused) audioEl.volume = vol;
   };
+  const onLoop = (checked: boolean) => {
+    setLoop(checked);
+    state.settings.loop = checked;
+    void setBackendSetting({ key: 'loop', value: checked }).catch(e => warn('save loop failed', e));
+    if (audioEl) audioEl.loop = checked;
+  };
   return (
+    <>
     <SliderField
       label="Music volume"
       description={`Background theme music is set to ${percent}%.`}
@@ -332,6 +363,15 @@ const SettingsContent: React.FC = () => {
       notchTicksVisible
       onChange={onSlider}
     />
+    <style>{SETTINGS_CSS}</style>
+    <ToggleRow
+      icon={SETTINGS_ICONS.repeat}
+      title="Loop song"
+      description={loop ? 'The theme song repeats while you stay on the game page.' : 'The theme song plays once and stops.'}
+      checked={loop}
+      onChange={onLoop}
+    />
+    </>
   );
 };
 

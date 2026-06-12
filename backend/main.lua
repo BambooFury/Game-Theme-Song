@@ -27,7 +27,7 @@ local LEGACY_FILES = {
     QUEUE_DIR .. "\\ytdlp-download.done",
     QUEUE_DIR .. "\\ytdlp-install.ps1",
 }
-local CONFIG_VERSION = 9
+local CONFIG_VERSION = 10
 
 local DEFAULT_SETTINGS = {
     config_version = CONFIG_VERSION,
@@ -35,6 +35,7 @@ local DEFAULT_SETTINGS = {
     volume = 0.35,
     fade_seconds = 1.5,
     search_suffix = " theme song",
+    loop = true,
 }
 
 local cache = {}
