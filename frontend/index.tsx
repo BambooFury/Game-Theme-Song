@@ -350,13 +350,13 @@ interface ToggleRowProps {
 }
 
 const ToggleRow: React.FC<ToggleRowProps> = ({ icon, title, description, checked, onChange }) => (
-  <div className={`gts-set-row${checked ? ' gts-on' : ''}`} onClick={() => onChange(!checked)}>
+  <div className={`gts-set-row${checked ? ' gts-on' : ''}`}>
     <span className="gts-set-ic" dangerouslySetInnerHTML={{ __html: icon }} />
     <span className="gts-set-text">
       <div className="gts-set-title">{title}</div>
       <div className="gts-set-desc">{description}</div>
     </span>
-    <span className="gts-set-switch"><span className="gts-set-knob" /></span>
+    <span className="gts-set-switch" onClick={() => onChange(!checked)}><span className="gts-set-knob" /></span>
   </div>
 );
 
@@ -370,7 +370,7 @@ interface ButtonRowProps {
 }
 
 const ButtonRow: React.FC<ButtonRowProps> = ({ icon, title, description, buttonLabel, disabled, onClick }) => (
-  <div className="gts-set-row gts-static">
+  <div className="gts-set-row">
     <span className="gts-set-ic" dangerouslySetInnerHTML={{ __html: icon }} />
     <span className="gts-set-text">
       <div className="gts-set-title">{title}</div>
