@@ -1,0 +1,44 @@
+@keyframes gts-search-sweep {
+  0%   { transform: translate(-2px, 1px)  rotate(-8deg); }
+  25%  { transform: translate(2px, -1px)  rotate(6deg); }
+  50%  { transform: translate(-1px, -2px) rotate(-4deg); }
+  75%  { transform: translate(2px, 2px)   rotate(8deg); }
+  100% { transform: translate(-2px, 1px)  rotate(-8deg); }
+}
+
+#gts-search-toast {
+  position: fixed;
+  top: 70px;
+  left: calc(50% + 120px);
+  transform: translateX(-50%);
+  z-index: 999990;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: rgba(24, 28, 34, 0.82);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  color: #dfe6ec;
+  font: 500 13px 'Motiva Sans', 'Segoe UI', Arial, sans-serif;
+  letter-spacing: 0.2px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.35s ease;
+}
+
+#gts-search-toast.gts-show {
+  opacity: 1;
+}
+
+#gts-search-toast .gts-search-toast-icon {
+  display: flex;
+  width: 18px;
+  height: 18px;
+}
+
+#gts-search-toast .gts-search-toast-icon svg {
+  animation: gts-search-sweep 3.2s ease-in-out infinite;
+}

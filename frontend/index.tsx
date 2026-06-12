@@ -1,5 +1,6 @@
-import { IconsModule, definePlugin, SliderField, callable } from '@steambrew/client';
+import { IconsModule, definePlugin, SliderField, callable, routerHook } from '@steambrew/client';
 import React, { useEffect, useState } from 'react';
+import { SEARCH_TOAST_CSS, SEARCH_TOAST_ICON } from './_assets.generated';
 
 type Primitive = string | number | boolean;
 type NoArgs = [];
@@ -152,13 +153,44 @@ async function resolveGameName(appId: number): Promise<string | null> {
   return name;
 }
 
+let searchActive = false;
+let searchListeners: ((on: boolean) => void)[] = [];
+
+function setSearching(on: boolean) {
+  if (searchActive === on) return;
+  searchActive = on;
+  for (const fn of searchListeners) fn(on);
+}
+
+const SearchToast: React.FC = () => {
+  const [on, setOn] = useState(searchActive);
+
+  useEffect(() => {
+    const fn = (v: boolean) => setOn(v);
+    searchListeners.push(fn);
+    return () => { searchListeners = searchListeners.filter((x) => x !== fn); };
+  }, []);
+
+  return (
+    <>
+      <style>{SEARCH_TOAST_CSS}</style>
+      <div id="gts-search-toast" className={on ? 'gts-show' : ''}>
+        <span className="gts-search-toast-icon" dangerouslySetInnerHTML={{ __html: SEARCH_TOAST_ICON }} />
+        <span>Searching music&hellip;</span>
+      </div>
+    </>
+  );
+};
+
 async function playForApp(appId: number) {
+  let mySeq = -1;
   try {
     if (!state.settings.enabled) return;
     if (currentAppId === appId && audioEl && !audioEl.paused) return;
     currentAppId = appId;
-    const mySeq = ++activeSeq;
+    mySeq = ++activeSeq;
     const getSeq = () => activeSeq;
+    setSearching(true);
     const name = await resolveGameName(appId);
     if (mySeq !== activeSeq) return;
     if (!name) { warn('no name for', appId); return; }
@@ -189,6 +221,9 @@ async function playForApp(appId: number) {
     if (r2.url) await playUrl(r2.url, mySeq, getSeq);
   } catch (e) {
     warn('playForApp crashed', e);
+  } finally {
+    // Hide only if no newer search has started in the meantime.
+    if (mySeq === activeSeq) setSearching(false);
   }
 }
 
@@ -243,7 +278,7 @@ function pollOnce() {
     navDebounceTimer = null;
     const finalId = detectAppId();
     if (finalId === currentAppId) return;
-    if (finalId === null) currentAppId = null;
+    if (finalId === null) { currentAppId = null; setSearching(false); }
     else void playForApp(finalId);
   }, NAV_DEBOUNCE_MS);
 }
@@ -302,10 +337,14 @@ const SettingsContent: React.FC = () => {
 
 export default definePlugin(() => {
   void loadSettingsOnce();
+  routerHook.addGlobalComponent('GTSSearchToast', SearchToast);
   startPolling();
   return {
     title: 'Game Theme Song',
     icon: <IconsModule.Music />,
     content: <SettingsContent />,
+    onDismount() {
+      routerHook.removeGlobalComponent('GTSSearchToast');
+    },
   };
 });
