@@ -1,0 +1,51 @@
+name: Build & Attach Release Asset
+
+on:
+  release:
+    types: [published, created, edited]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build plugin
+        run: pnpm run build
+
+      - name: Stage release files
+        run: |
+          mkdir -p _release/game-theme-song
+          cp plugin.json _release/game-theme-song/
+          cp README.md _release/game-theme-song/
+          cp LICENSE _release/game-theme-song/
+          cp -r backend _release/game-theme-song/
+          cp -r .millennium _release/game-theme-song/
+
+      - name: Create zip archive
+        run: |
+          cd _release
+          zip -r "../game-theme-song-${{ github.event.release.tag_name }}.zip" game-theme-song
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: game-theme-song-*.zip
+          token: ${{ secrets.GITHUB_TOKEN }}
