@@ -243,7 +243,7 @@ local function order_candidates(candidates, game_name)
     return candidates
 end
 
-local AUDIO_EXTS = { "webm", "m4a", "mp3" }
+local AUDIO_EXTS = { "webm", "m4a", "mp3", "ogg", "wav", "flac" }
 
 local function looks_like_audio(path)
     local f = io.open(path, "rb")
@@ -279,6 +279,151 @@ local function download_file(key, ext, url, ua)
         return nil, "not_audio"
     end
     return filename, nil
+end
+
+local LOCAL_EXTS = { mp3 = true, ogg = true, m4a = true, flac = true, wav = true }
+local LOCAL_DIR_HINTS = { "music", "bgm", "soundtrack", "ost", "audio" }
+local LOCAL_NAME_SCORES = {
+    { "main theme", 60 }, { "maintheme", 60 }, { "main menu", 50 }, { "mainmenu", 50 },
+    { "title screen", 48 }, { "titlescreen", 48 }, { "theme", 45 }, { "title", 40 },
+    { "menu", 32 }, { "opening", 20 }, { "intro", 18 }, { "main", 16 },
+}
+local LOCAL_BAD_WORDS = { "sfx", "effect", "voice", "ambient", "ambience", "footstep", "trailer", "credits", "jingle", "stinger" }
+
+local function vdf_unescape(v)
+    return (tostring(v):gsub("\\\\", "\\"))
+end
+
+local function steam_libraries()
+    local libs, seen = {}, {}
+    local function add(p)
+        p = tostring(p):gsub("/", "\\"):gsub("\\+$", "")
+        local lower = p:lower()
+        if #p > 2 and not seen[lower] and fs.exists(p .. "\\steamapps") then
+            seen[lower] = true
+            libs[#libs + 1] = p
+        end
+    end
+    local root = millennium.steam_path():gsub("/", "\\")
+    add(root)
+    local body = read_file(root .. "\\steamapps\\libraryfolders.vdf")
+    if body then
+        for p in body:gmatch('"path"%s*"([^"]*)"') do add(vdf_unescape(p)) end
+    end
+    return libs
+end
+
+local function find_install_dir(key)
+    for _, lib in ipairs(steam_libraries()) do
+        local manifest = read_file(lib .. "\\steamapps\\appmanifest_" .. key .. ".acf")
+        if manifest then
+            local dir = manifest:match('"installdir"%s*"([^"]*)"')
+            if dir and dir ~= "" then
+                local full = lib .. "\\steamapps\\common\\" .. vdf_unescape(dir)
+                if fs.exists(full) then return full end
+            end
+        end
+    end
+    return nil
+end
+
+local function collect_audio_files(root, max_depth, max_entries)
+    local results = {}
+    local queue = { { path = root, depth = 0 } }
+    local scanned = 0
+    while #queue > 0 do
+        local item = table.remove(queue, 1)
+        local entries = fs.list(item.path)
+        if type(entries) == "table" then
+            for _, e in ipairs(entries) do
+                scanned = scanned + 1
+                if scanned > max_entries then return results end
+                if e.is_directory then
+                    if item.depth < max_depth then queue[#queue + 1] = { path = e.path, depth = item.depth + 1 } end
+                elseif e.is_file then
+                    local ext = tostring(e.name):match("%.(%w+)$")
+                    ext = ext and ext:lower()
+                    if ext and LOCAL_EXTS[ext] then
+                        local size = tonumber(e.size) or 0
+                        if size >= 300 * 1024 and size <= 60 * 1024 * 1024 then
+                            results[#results + 1] = { path = tostring(e.path), name = tostring(e.name), rel = tostring(e.path):sub(#root + 2) }
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return results
+end
+
+local function score_local_file(rel)
+    local words = " " .. rel:lower():gsub("[^%w]+", " ") .. " "
+    local score = 0
+    for _, entry in ipairs(LOCAL_NAME_SCORES) do
+        if words:find(" " .. entry[1] .. " ", 1, true) then score = score + entry[2]; break end
+    end
+    for _, b in ipairs(LOCAL_BAD_WORDS) do
+        if words:find(" " .. b .. " ", 1, true) then score = score - 60 end
+    end
+    for _, h in ipairs(LOCAL_DIR_HINTS) do
+        if words:find(" " .. h .. " ", 1, true) then score = score + 8; break end
+    end
+    return score
+end
+
+local function pick_soundtrack_track(game_name)
+    local target = norm_words(clean_game_name(game_name)):gsub("^%s+", ""):gsub("%s+$", "")
+    if #target < 3 then return nil end
+    for _, lib in ipairs(steam_libraries()) do
+        local entries = fs.list(lib .. "\\steamapps\\music")
+        if type(entries) == "table" then
+            for _, e in ipairs(entries) do
+                if e.is_directory and norm_words(tostring(e.name)):find(target, 1, true) then
+                    local files = collect_audio_files(tostring(e.path), 3, 2000)
+                    local best, best_score
+                    for _, f in ipairs(files) do
+                        local sc = score_local_file(f.rel)
+                        if f.name:match("^%D*0?1[%.%s%-_]") then sc = sc + 12 end
+                        if not best or sc > best_score or (sc == best_score and f.name < best.name) then best, best_score = f, sc end
+                    end
+                    if best then return best end
+                end
+            end
+        end
+    end
+    return nil
+end
+
+local function pick_install_track(dir)
+    local files = collect_audio_files(dir, 4, 6000)
+    local best, best_score
+    for _, f in ipairs(files) do
+        local sc = score_local_file(f.rel)
+        if sc >= 16 and (not best or sc > best_score or (sc == best_score and f.path < best.path)) then
+            best, best_score = f, sc
+        end
+    end
+    return best
+end
+
+local function local_resolve(game_name, key)
+    if not (fs and fs.list and fs.copy and fs.exists) then return nil, "local_unsupported" end
+    local picked = pick_soundtrack_track(game_name)
+    if not picked then
+        local dir = find_install_dir(key)
+        if dir then picked = pick_install_track(dir) end
+    end
+    if not picked then return nil, "no_local_audio" end
+    local ext = tostring(picked.name):match("%.(%w+)$")
+    if not ext then return nil, "no_local_audio" end
+    ext = ext:lower()
+    pcall(fs.create_directories, AUDIO_DIR)
+    for _, e in ipairs(AUDIO_EXTS) do
+        if e ~= ext then pcall(fs.remove, AUDIO_DIR .. "\\" .. key .. "." .. e) end
+    end
+    local copied = fs.copy(picked.path, AUDIO_DIR .. "\\" .. key .. "." .. ext)
+    if not copied then return nil, "local_copy_failed" end
+    return { file = key .. "." .. ext, title = (tostring(picked.name):gsub("%.%w+$", "")) }
 end
 
 local KHINSIDER_BASE = "https://downloads.khinsider.com"
@@ -454,10 +599,13 @@ function get_theme_audio(app_id, force_refresh, game_name)
             return json.encode({ ok = true, url = url, title = entry.title, cached = true })
         end
         local variants = name_variants(game_name)
-        local r, kh_err
-        for _, q in ipairs(variants) do
-            r, kh_err = khinsider_resolve(q, key)
-            if r and r.file then break end
+        local r = local_resolve(game_name, key)
+        local kh_err
+        if not (r and r.file) then
+            for _, q in ipairs(variants) do
+                r, kh_err = khinsider_resolve(q, key)
+                if r and r.file then break end
+            end
         end
         if not (r and r.file) then
             local sc_err
@@ -483,9 +631,7 @@ end
 function invalidate_audio(app_id)
     local key = tostring(app_id)
     if fs and fs.remove then
-        pcall(fs.remove, AUDIO_DIR .. "\\" .. key .. ".webm")
-        pcall(fs.remove, AUDIO_DIR .. "\\" .. key .. ".m4a")
-        pcall(fs.remove, AUDIO_DIR .. "\\" .. key .. ".mp3")
+        for _, e in ipairs(AUDIO_EXTS) do pcall(fs.remove, AUDIO_DIR .. "\\" .. key .. "." .. e) end
     end
     cache[key] = nil
     save_cache()
