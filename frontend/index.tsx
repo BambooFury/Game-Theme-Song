@@ -1,6 +1,6 @@
-import { IconsModule, definePlugin, SliderField, callable, routerHook } from '@steambrew/client';
+import { IconsModule, definePlugin, callable, routerHook } from '@steambrew/client';
 import React, { useEffect, useState } from 'react';
-import { SEARCH_TOAST_CSS, SEARCH_TOAST_ICON } from './_assets.generated';
+import { SEARCH_TOAST_CSS, SEARCH_TOAST_ICON, SETTINGS_CSS, SETTINGS_ICONS } from './_assets.generated';
 
 type Primitive = string | number | boolean;
 type NoArgs = [];
@@ -10,12 +10,17 @@ const invalidateAudio = callable<[{ app_id: number | string }], string>('invalid
 const getBackendSettings = callable<NoArgs, string>('get_settings');
 const setBackendSetting = callable<[{ key: string; value: Primitive }], string>('set_setting');
 const logFrontend = callable<[{ message: string }], string>('log_frontend');
+const getCacheInfo = callable<NoArgs, string>('get_cache_info');
+const clearAudioCache = callable<NoArgs, string>('clear_audio_cache');
 
 interface Settings {
   enabled: boolean;
   volume: number;
   fade_seconds: number;
   search_suffix: string;
+  loop: boolean;
+  max_seconds: number;
+  stop_on_launch: boolean;
 }
 
 const DEFAULTS: Settings = {
@@ -23,6 +28,9 @@ const DEFAULTS: Settings = {
   volume: 0.35,
   fade_seconds: 1.5,
   search_suffix: ' theme song',
+  loop: true,
+  max_seconds: 0,
+  stop_on_launch: true,
 };
 
 
@@ -51,13 +59,27 @@ async function loadSettingsOnce() {
   }
 }
 
+let limitStopping = false;
+
+function applyLimit(a: HTMLAudioElement) {
+  const limit = state.settings.max_seconds;
+  if (limit <= 0 || a.paused || a.currentTime < limit) return;
+  if (state.settings.loop) {
+    a.currentTime = 0;
+  } else if (!limitStopping) {
+    limitStopping = true;
+    stopAudio();
+  }
+}
+
 function ensureAudio(): HTMLAudioElement {
   if (audioEl && document.body.contains(audioEl)) return audioEl;
   const a = document.createElement('audio');
   a.id = 'game-theme-song-audio';
   a.preload = 'none';
-  a.loop = true;
+  a.loop = state.settings.loop;
   a.style.display = 'none';
+  a.ontimeupdate = () => applyLimit(a);
   document.body.appendChild(a);
   audioEl = a;
   return a;
@@ -94,8 +116,20 @@ function stopAudio(durationSec = state.settings.fade_seconds) {
   });
 }
 
+async function probeUrl(url: string) {
+  try {
+    const r = await fetch(url);
+    const buf = new Uint8Array(await r.arrayBuffer());
+    const hex = Array.from(buf.slice(0, 16)).map(b => b.toString(16).padStart(2, '0')).join(' ');
+    reportError(`probe status=${r.status} type=${r.headers.get('content-type')} size=${buf.length} head=${hex}`);
+  } catch (e: any) {
+    reportError(`probe failed: ${e?.name ?? ''} ${e?.message ?? e}`);
+  }
+}
+
 async function playUrl(url: string, mySeq: number, active: () => number): Promise<boolean> {
   if (mySeq !== active()) return false;
+  limitStopping = false;
   const a = ensureAudio();
   a.onerror = () => {
     const err = a.error;
@@ -105,6 +139,7 @@ async function playUrl(url: string, mySeq: number, active: () => number): Promis
     a.src = url;
     a.load();
   }
+  a.loop = state.settings.loop;
   a.volume = 0;
   a.muted = false;
   const tryPlay = async (): Promise<string> => {
@@ -123,6 +158,7 @@ async function playUrl(url: string, mySeq: number, active: () => number): Promis
   }
   if (result !== 'ok') {
     reportError(`audio play failed: ${result} (mediaError=${a.error?.code ?? 'none'})`);
+    void probeUrl(url);
     return false;
   }
   if (mySeq !== active()) {
@@ -222,7 +258,6 @@ async function playForApp(appId: number) {
   } catch (e) {
     warn('playForApp crashed', e);
   } finally {
-    // Hide only if no newer search has started in the meantime.
     if (mySeq === activeSeq) setSearching(false);
   }
 }
@@ -289,9 +324,129 @@ function startPolling() {
   setTimeout(pollOnce, 100);
 }
 
+let launchHook: { unregister?: () => void } | null = null;
+
+function registerLaunchStop() {
+  try {
+    const sc = (window as any).SteamClient;
+    if (!sc?.Apps?.RegisterForGameActionStart) {
+      warn('RegisterForGameActionStart unavailable');
+      return;
+    }
+    launchHook = sc.Apps.RegisterForGameActionStart(() => {
+      if (state.settings.stop_on_launch) stopAudio(0.4);
+    });
+  } catch (e) {
+    warn('failed to register launch listener', e);
+  }
+}
+
+interface ToggleRowProps {
+  icon: string;
+  title: string;
+  description: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}
+
+const ToggleRow: React.FC<ToggleRowProps> = ({ icon, title, description, checked, onChange }) => (
+  <div className={`gts-set-row${checked ? ' gts-on' : ''}`}>
+    <span className="gts-set-ic" dangerouslySetInnerHTML={{ __html: icon }} />
+    <span className="gts-set-text">
+      <div className="gts-set-title">{title}</div>
+      <div className="gts-set-desc">{description}</div>
+    </span>
+    <span className="gts-set-switch" onClick={() => onChange(!checked)}><span className="gts-set-knob" /></span>
+  </div>
+);
+
+interface ButtonRowProps {
+  icon: string;
+  title: string;
+  description: string;
+  buttonLabel: string;
+  disabled?: boolean;
+  onClick: () => void;
+}
+
+const ButtonRow: React.FC<ButtonRowProps> = ({ icon, title, description, buttonLabel, disabled, onClick }) => (
+  <div className="gts-set-row">
+    <span className="gts-set-ic" dangerouslySetInnerHTML={{ __html: icon }} />
+    <span className="gts-set-text">
+      <div className="gts-set-title">{title}</div>
+      <div className="gts-set-desc">{description}</div>
+    </span>
+    <button className="gts-set-btn" disabled={disabled} onClick={onClick}>{buttonLabel}</button>
+  </div>
+);
+
+interface SliderRowProps {
+  icon: string;
+  title: string;
+  description: string;
+  value: number;
+  valueLabel: string;
+  min?: number;
+  max?: number;
+  step?: number;
+  onChange: (value: number) => void;
+}
+
+const SliderRow: React.FC<SliderRowProps> = ({ icon, title, description, value, valueLabel, min = 0, max = 100, step = 1, onChange }) => {
+  const fill = ((value - min) / (max - min)) * 100;
+  return (
+    <div className={`gts-set-row gts-vert${value > min ? ' gts-on' : ''}`}>
+      <div className="gts-set-head">
+        <span className="gts-set-ic" dangerouslySetInnerHTML={{ __html: icon }} />
+        <span className="gts-set-text">
+          <div className="gts-set-title">{title}</div>
+          <div className="gts-set-desc">{description}</div>
+        </span>
+        <span className="gts-set-val">{valueLabel}</span>
+      </div>
+      <input
+        type="range"
+        className="gts-set-slider"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        style={{ background: `linear-gradient(to right, #67c1f5 ${fill}%, rgba(255,255,255,0.12) ${fill}%)` }}
+        onChange={(ev: React.ChangeEvent<HTMLInputElement>) => onChange(Number(ev.target.value))}
+      />
+    </div>
+  );
+};
+
+const formatLimit = (sec: number) => {
+  if (sec <= 0) return 'Off';
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return m > 0 ? `${m}:${String(s).padStart(2, '0')}` : `${s}s`;
+};
+
 const SettingsContent: React.FC = () => {
   const [percent, setPercent] = useState(Math.round(state.settings.volume * 100));
+  const [loop, setLoop] = useState(state.settings.loop);
+  const [maxSec, setMaxSec] = useState(state.settings.max_seconds);
+  const [stopOnLaunch, setStopOnLaunch] = useState(state.settings.stop_on_launch);
+  const [cacheCount, setCacheCount] = useState<number | null>(null);
+  const [cacheBytes, setCacheBytes] = useState(0);
+  const [clearing, setClearing] = useState(false);
+  const refreshCacheInfo = async () => {
+    try {
+      const raw = await getCacheInfo();
+      const info = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      if (info?.ok) {
+        setCacheCount(info.count ?? 0);
+        setCacheBytes(info.bytes ?? 0);
+      }
+    } catch (e) {
+      warn('failed to load cache info', e);
+    }
+  };
   useEffect(() => {
+    void refreshCacheInfo();
     (async () => {
       try {
         const raw = await getBackendSettings();
@@ -299,6 +454,9 @@ const SettingsContent: React.FC = () => {
         if (s && typeof s === 'object') {
           state.settings = { ...state.settings, ...s };
           setPercent(Math.round(state.settings.volume * 100));
+          setLoop(state.settings.loop);
+          setMaxSec(state.settings.max_seconds);
+          setStopOnLaunch(state.settings.stop_on_launch);
           if (audioEl) audioEl.volume = state.settings.volume;
         }
       } catch (e) {
@@ -313,25 +471,85 @@ const SettingsContent: React.FC = () => {
     void setBackendSetting({ key: 'volume', value: vol }).catch(e => warn('save volume failed', e));
     if (audioEl && !audioEl.paused) audioEl.volume = vol;
   };
+  const onLoop = (checked: boolean) => {
+    setLoop(checked);
+    state.settings.loop = checked;
+    void setBackendSetting({ key: 'loop', value: checked }).catch(e => warn('save loop failed', e));
+    if (audioEl) audioEl.loop = checked;
+  };
+  const onLimit = (sec: number) => {
+    const v = Math.max(0, Math.round(sec));
+    setMaxSec(v);
+    state.settings.max_seconds = v;
+    void setBackendSetting({ key: 'max_seconds', value: v }).catch(e => warn('save max_seconds failed', e));
+  };
+  const onClearCache = async () => {
+    if (clearing) return;
+    setClearing(true);
+    try {
+      await clearAudioCache();
+      stopAudio(0);
+      currentAppId = null;
+      lastDetectedAppId = null;
+      await refreshCacheInfo();
+    } catch (e) {
+      warn('clear cache failed', e);
+    } finally {
+      setClearing(false);
+    }
+  };
+  const onStopOnLaunch = (checked: boolean) => {
+    setStopOnLaunch(checked);
+    state.settings.stop_on_launch = checked;
+    void setBackendSetting({ key: 'stop_on_launch', value: checked }).catch(e => warn('save stop_on_launch failed', e));
+  };
   return (
-    <SliderField
-      label="Music volume"
-      description={`Background theme music is set to ${percent}%.`}
-      min={0}
-      max={100}
-      step={1}
+    <>
+    <style>{SETTINGS_CSS}</style>
+    <SliderRow
+      icon={SETTINGS_ICONS.volume}
+      title="Music volume"
+      description={percent > 0 ? 'Background theme music volume.' : 'Theme music is muted.'}
       value={percent}
-      showValue
-      valueSuffix="%"
-      notchCount={5}
-      notchLabels={[{ notchIndex: 0, label: '0%', value: 0 },
-        { notchIndex: 1, label: '25%', value: 25 },
-        { notchIndex: 2, label: '50%', value: 50 },
-        { notchIndex: 3, label: '75%', value: 75 },
-        { notchIndex: 4, label: '100%', value: 100 }]}
-      notchTicksVisible
+      valueLabel={`${percent}%`}
       onChange={onSlider}
     />
+    <SliderRow
+      icon={SETTINGS_ICONS.timer}
+      title="Song length limit"
+      description={maxSec > 0
+        ? (loop ? `The song restarts after ${formatLimit(maxSec)}.` : `The song stops after ${formatLimit(maxSec)}.`)
+        : 'The full song plays.'}
+      value={maxSec}
+      valueLabel={formatLimit(maxSec)}
+      min={0}
+      max={300}
+      step={15}
+      onChange={onLimit}
+    />
+    <ToggleRow
+      icon={SETTINGS_ICONS.repeat}
+      title="Loop song"
+      description={loop ? 'The theme song repeats while you stay on the game page.' : 'The theme song plays once and stops.'}
+      checked={loop}
+      onChange={onLoop}
+    />
+    <ToggleRow
+      icon={SETTINGS_ICONS.gamepad}
+      title="Stop on game launch"
+      description={stopOnLaunch ? 'Theme music stops when you launch a game.' : 'Theme music keeps playing when a game starts.'}
+      checked={stopOnLaunch}
+      onChange={onStopOnLaunch}
+    />
+    <ButtonRow
+      icon={SETTINGS_ICONS.trash}
+      title="Clear downloaded music"
+      description={cacheCount === null ? 'Checking…' : cacheCount === 0 ? 'Nothing downloaded yet.' : `${cacheCount} ${cacheCount === 1 ? 'track' : 'tracks'} · ${(cacheBytes / 1048576).toFixed(1)} MB on disk`}
+      buttonLabel={clearing ? 'Clearing…' : 'Clear'}
+      disabled={clearing || cacheCount === 0}
+      onClick={() => { void onClearCache(); }}
+    />
+    </>
   );
 };
 
@@ -339,12 +557,14 @@ export default definePlugin(() => {
   void loadSettingsOnce();
   routerHook.addGlobalComponent('GTSSearchToast', SearchToast);
   startPolling();
+  registerLaunchStop();
   return {
     title: 'Game Theme Song',
     icon: <IconsModule.Music />,
     content: <SettingsContent />,
     onDismount() {
       routerHook.removeGlobalComponent('GTSSearchToast');
+      launchHook?.unregister?.();
     },
   };
 });
