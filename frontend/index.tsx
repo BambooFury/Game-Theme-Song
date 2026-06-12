@@ -1,5 +1,5 @@
 ﻿import { IconsModule, definePlugin, SliderField, callable, routerHook } from '@steambrew/client';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 
 type Primitive = string | number | boolean;
 type NoArgs = [];
@@ -8,10 +8,7 @@ const getThemeAudio = callable<[{ app_id: number | string; game_name: string; fo
 const invalidateAudio = callable<[{ app_id: number | string }], string>('invalidate_audio');
 const getBackendSettings = callable<NoArgs, string>('get_settings');
 const setBackendSetting = callable<[{ key: string; value: Primitive }], string>('set_setting');
-const welcomeGetState = callable<NoArgs, string>('welcome_get_state');
 const getIconDataUri = callable<[{ name: string }], string>('get_icon_data_uri');
-const ytdlpHiddenDownloadStart = callable<NoArgs, string>('ytdlp_hidden_download_start');
-const ytdlpHiddenDownloadStatus = callable<NoArgs, string>('ytdlp_hidden_download_status');
 const logFrontend = callable<[{ message: string }], string>('log_frontend');
 
 interface Settings {
@@ -28,27 +25,32 @@ const DEFAULTS: Settings = {
   search_suffix: ' theme song',
 };
 
-const state: { settings: Settings } = { settings: {...DEFAULTS } };
-const log = (...a: unknown[]) => console.log('[GameThemeSong]',...a);
-const warn = (...a: unknown[]) => console.warn('[GameThemeSong]',...a);
+const WELCOME_FLAG = 'gts_welcomed_v1';
+
+const state: { settings: Settings } = { settings: { ...DEFAULTS } };
+const log = (...a: unknown[]) => console.log('[GameThemeSong]', ...a);
+const warn = (...a: unknown[]) => console.warn('[GameThemeSong]', ...a);
 const backendLog = (message: string) => {
   log(message);
   void logFrontend({ message }).catch(() => {});
 };
 
 let audioEl: HTMLAudioElement | null = null;
+let embedEl: HTMLIFrameElement | null = null;
+let embedReady = false;
+let embedMsgHandler: ((ev: MessageEvent) => void) | null = null;
 let fadeTimer: ReturnType<typeof setInterval> | null = null;
 let activeSeq = 0;
 let currentAppId: number | null = null;
-let setupPatch: any = null;
-let setupInstalled = false;
+let welcomePatch: any = null;
+let welcomeInstalled = false;
 
 async function loadSettingsOnce() {
   try {
     const raw = await getBackendSettings();
     const s = typeof raw === 'string' ? JSON.parse(raw) : raw;
     if (s && typeof s === 'object') {
-      state.settings = {...state.settings,...s };
+      state.settings = { ...state.settings, ...s };
       if (audioEl) audioEl.volume = state.settings.volume;
     }
   } catch (e) {
@@ -57,9 +59,7 @@ async function loadSettingsOnce() {
 }
 
 interface ModalIcons {
-  check: string;
   music: string;
-  musicDark: string;
   question: string;
   questionDark: string;
   exit: string;
@@ -67,9 +67,7 @@ interface ModalIcons {
 }
 
 const modalIcons: ModalIcons = {
-  check: '',
   music: '',
-  musicDark: '',
   question: '',
   questionDark: '',
   exit: '',
@@ -77,9 +75,7 @@ const modalIcons: ModalIcons = {
 };
 
 async function loadModalIcons(): Promise<ModalIcons> {
-  const entries: Array<[keyof ModalIcons, string]> = [['check', 'check.svg'],
-    ['music', 'music-note.svg'],
-    ['musicDark', 'music-note-dark.svg'],
+  const entries: Array<[keyof ModalIcons, string]> = [['music', 'music-note.svg'],
     ['question', 'question.svg'],
     ['questionDark', 'question-dark.svg'],
     ['exit', 'exit.svg'],
@@ -132,7 +128,60 @@ function fadeTo(target: number, durationSec: number, onComplete?: () => void) {
   }, (durationSec * 1000) / ticks);
 }
 
+function embedCommand(func: string, args: unknown[] = []) {
+  try {
+    embedEl?.contentWindow?.postMessage(JSON.stringify({ event: 'command', func, args }), '*');
+  } catch {}
+}
+
+function stopEmbed() {
+  if (embedMsgHandler) {
+    window.removeEventListener('message', embedMsgHandler);
+    embedMsgHandler = null;
+  }
+  if (!embedEl) return;
+  embedCommand('stopVideo');
+  embedEl.remove();
+  embedEl = null;
+  embedReady = false;
+}
+
+function playEmbed(videoId: string, mySeq: number, active: () => number) {
+  stopEmbed();
+  if (mySeq !== active()) return;
+  const f = document.createElement('iframe');
+  f.id = 'game-theme-song-embed';
+  f.style.cssText = 'position:absolute;width:1px;height:1px;left:-9999px;top:-9999px;border:0;';
+  f.allow = 'autoplay; encrypted-media';
+  f.src = `https://www.youtube.com/embed/${videoId}?enablejsapi=1&autoplay=1&loop=1&playlist=${videoId}&controls=0`;
+  document.body.appendChild(f);
+  embedEl = f;
+  embedReady = false;
+  embedMsgHandler = (ev: MessageEvent) => {
+    if (!embedEl || ev.source !== embedEl.contentWindow) return;
+    let data: any;
+    try { data = typeof ev.data === 'string' ? JSON.parse(ev.data) : ev.data; } catch { return; }
+    if (data?.event === 'onReady') {
+      embedReady = true;
+      if (mySeq !== active()) { stopEmbed(); return; }
+      embedCommand('setVolume', [Math.round(state.settings.volume * 100)]);
+      embedCommand('unMute');
+      embedCommand('playVideo');
+      backendLog('embed playback started');
+    } else if (data?.event === 'onError') {
+      backendLog(`embed player error: ${data?.info ?? '?'}`);
+    }
+  };
+  window.addEventListener('message', embedMsgHandler);
+  f.addEventListener('load', () => {
+    try {
+      f.contentWindow?.postMessage(JSON.stringify({ event: 'listening', id: 'game-theme-song-embed' }), '*');
+    } catch {}
+  });
+}
+
 function stopAudio(durationSec = state.settings.fade_seconds) {
+  stopEmbed();
   if (!audioEl) return;
   audioEl.onerror = null;
   fadeTo(0, durationSec, () => {
@@ -143,27 +192,45 @@ function stopAudio(durationSec = state.settings.fade_seconds) {
 async function playUrl(url: string, mySeq: number, active: () => number): Promise<boolean> {
   if (mySeq !== active()) return false;
   const a = ensureAudio();
+  a.onerror = () => {
+    const err = a.error;
+    backendLog(`audio element error: code=${err?.code ?? '?'} message=${err?.message ?? ''} networkState=${a.networkState} readyState=${a.readyState}`);
+  };
   if (a.src !== url) {
     a.src = url;
     a.load();
   }
   a.volume = 0;
-  return new Promise((resolve) => {
-    a.onerror = () => {
-      warn('audio error', a.error?.code);
-      resolve(false);
-    };
-    a.play()
-    .then(() => {
-        if (mySeq !== active()) { resolve(false); return; }
-        fadeTo(state.settings.volume, state.settings.fade_seconds);
-        resolve(true);
-      })
-    .catch((e) => {
-        warn('audio play rejected', e?.message ?? e);
-        resolve(false);
-      });
-  });
+  a.muted = false;
+  const tryPlay = async (): Promise<string> => {
+    try {
+      await a.play();
+      return 'ok';
+    } catch (e: any) {
+      return `${e?.name ?? 'Error'}: ${e?.message ?? e}`;
+    }
+  };
+  let result = await tryPlay();
+  if (result !== 'ok' && result.startsWith('NotAllowedError')) {
+    backendLog(`autoplay blocked (${result}), retrying muted`);
+    a.muted = true;
+    result = await tryPlay();
+    if (result === 'ok') {
+      a.muted = false;
+      backendLog('muted-start workaround succeeded');
+    }
+  }
+  if (result !== 'ok') {
+    backendLog(`audio play failed: ${result} (mediaError=${a.error?.code ?? 'none'})`);
+    return false;
+  }
+  if (mySeq !== active()) {
+    a.pause();
+    return false;
+  }
+  backendLog('playback started');
+  fadeTo(state.settings.volume, state.settings.fade_seconds);
+  return true;
 }
 
 async function resolveGameName(appId: number): Promise<string | null> {
@@ -186,198 +253,80 @@ async function resolveGameName(appId: number): Promise<string | null> {
   return name;
 }
 
-async function downloadYtdlp(onProgress: (p: number) => void) {
-  const globalState = window as any;
-  if (globalState.__gts_ytdlp_installing) {
-    backendLog('hidden yt-dlp download: already running');
-    return globalState.__gts_ytdlp_installing;
-  }
-  globalState.__gts_ytdlp_installing = (async () => {
-    backendLog('hidden yt-dlp download: begin');
-    const startRaw = await ytdlpHiddenDownloadStart();
-    const start = typeof startRaw === 'string' ? JSON.parse(startRaw) : startRaw;
-    if (!start?.ok) throw new Error(start?.error ?? 'hidden_download_start_failed');
-
-    let visualProgress = 8;
-    const startedAt = Date.now();
-    while (Date.now() - startedAt < 180000) {
-      await new Promise(r => setTimeout(r, 700));
-      const raw = await ytdlpHiddenDownloadStatus();
-      const status = typeof raw === 'string' ? JSON.parse(raw) : raw;
-      if (status?.state === 'done') {
-        onProgress(100);
-        backendLog(`hidden yt-dlp download: done ${status.size ?? 0}`);
-        return;
-      }
-      if (status?.state === 'error') throw new Error(status.error ?? 'hidden_download_failed');
-      visualProgress = Math.min(95, visualProgress + 2);
-      if (typeof status?.size === 'number' && status.size > 0) {
-        const bySize = Math.round((status.size / (22 * 1024 * 1024)) * 100);
-        visualProgress = Math.max(visualProgress, Math.min(95, bySize));
-      }
-      onProgress(visualProgress);
-    }
-    throw new Error('hidden_download_timeout');
-  })().finally(() => {
-    globalState.__gts_ytdlp_installing = null;
-  });
-  return globalState.__gts_ytdlp_installing;
+function removeWelcomePatch() {
+  if (!welcomePatch) return;
+  try { routerHook.removePatch('/library', welcomePatch); } catch {}
+  welcomePatch = null;
+  welcomeInstalled = false;
 }
 
-function removeSetupPatch() {
-  if (!setupPatch) return;
-  try { routerHook.removePatch('/library', setupPatch); } catch {}
-  setupPatch = null;
-  setupInstalled = false;
-}
-
-function installSetupPatch() {
-  if (setupInstalled) return;
-  setupInstalled = true;
-  setupPatch = routerHook.addPatch('/library', (props: any) => {
+function installWelcomePatch() {
+  if (welcomeInstalled) return;
+  welcomeInstalled = true;
+  welcomePatch = routerHook.addPatch('/library', (props: any) => {
     const SP = (window as any).SP_REACT as typeof React;
     if (!SP) return props;
     return {
     ...props,
-      children: SP.createElement(SP.Fragment, null, props.children, SP.createElement(SetupModal)),
+      children: SP.createElement(SP.Fragment, null, props.children, SP.createElement(WelcomeModal)),
     };
   });
 }
 
-function showSetupModal() {
-  if ((window as any).__gts_setup_later) return;
-  backendLog('setup modal: showing');
-  installSetupPatch();
-  (window as any).__gts_force_setup = true;
-}
-
-async function maybeShowSetup() {
-  backendLog('setup check: start');
+function maybeShowWelcome() {
   try {
-    const raw = await welcomeGetState();
-    backendLog(`setup check: raw ${String(raw).slice(0, 200)}`);
-    const s = typeof raw === 'string' ? JSON.parse(raw) : raw;
-    backendLog(`setup check: ytdlp_present=${String(s?.ytdlp_present)} size=${String(s?.ytdlp_size)}`);
-    if (!s?.ytdlp_present && !(window as any).__gts_setup_later) showSetupModal();
-  } catch (e) {
-    backendLog(`setup check failed: ${String((e as any)?.message ?? e)}`);
-    showSetupModal();
-  }
+    if (localStorage.getItem(WELCOME_FLAG)) return;
+  } catch {}
+  backendLog('welcome modal: showing');
+  installWelcomePatch();
 }
 
-const SetupModal: React.FC = () => {
+const WelcomeModal: React.FC = () => {
   const [show, setShow] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [phase, setPhase] = useState<'intro' | 'downloading' | 'done' | 'error' | 'info'>('intro');
-  const [message, setMessage] = useState('Game Theme Song needs a small helper file before it can find and play music.');
-  const [icons, setIcons] = useState<ModalIcons>({...modalIcons });
-  const downloadStarted = useRef(false);
+  const [phase, setPhase] = useState<'intro' | 'info'>('intro');
+  const [icons, setIcons] = useState<ModalIcons>({ ...modalIcons });
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         const loadedIcons = await loadModalIcons();
-        if (!cancelled) setIcons({...loadedIcons });
-        backendLog('react setup check: start');
-        const raw = await welcomeGetState();
-        backendLog(`react setup check: raw ${String(raw).slice(0, 200)}`);
-        const s = typeof raw === 'string' ? JSON.parse(raw) : raw;
-        if (!cancelled && !s?.ytdlp_present && !(window as any).__gts_setup_later) {
-          backendLog('react setup modal: showing');
-          setShow(true);
-        } else if (!cancelled) {
-          removeSetupPatch();
+        if (!cancelled) setIcons({ ...loadedIcons });
+      } catch {}
+      try {
+        if (localStorage.getItem(WELCOME_FLAG)) {
+          if (!cancelled) removeWelcomePatch();
+          return;
         }
-      } catch (e: any) {
-        backendLog(`react setup check failed: ${String(e?.message ?? e)}`);
-        if (!cancelled) setShow(true);
-      }
+      } catch {}
+      if (!cancelled) setShow(true);
     })();
     return () => { cancelled = true; };
   }, []);
 
-  useEffect(() => {
-    const timer = setInterval(() => {
-      if ((window as any).__gts_force_setup) {
-        (window as any).__gts_force_setup = false;
-        if ((window as any).__gts_setup_later) return;
-        downloadStarted.current = false;
-        setPhase('intro');
-        setProgress(0);
-        setMessage('Game Theme Song needs a small helper file before it can find and play music.');
-        setShow(true);
-      }
-    }, 500);
-    return () => clearInterval(timer);
-  }, []);
-
-  const start = async () => {
-    if (downloadStarted.current && phase !== 'error') return;
-    downloadStarted.current = true;
-    setPhase('downloading');
-    setProgress(0);
-    setMessage('Downloading yt-dlp.exe. This is about 18 MB and only needs to happen once.');
-    try {
-      await downloadYtdlp(setProgress);
-      setPhase('done');
-      setProgress(100);
-      setMessage('Setup completed successfully. Game Theme Song is ready.');
-    } catch (e: any) {
-      setPhase('error');
-      downloadStarted.current = false;
-      setMessage(String(e?.message ?? e ?? 'Download failed'));
-      backendLog(`react hidden download failed: ${String(e?.message ?? e)}`);
-    }
-  };
-
   if (!show) return null;
 
   const close = () => {
+    try { localStorage.setItem(WELCOME_FLAG, '1'); } catch {}
     setShow(false);
-    if (phase === 'done' || phase === 'info') removeSetupPatch();
-  };
-  const later = () => {
-    (window as any).__gts_setup_later = true;
-    setShow(false);
+    removeWelcomePatch();
   };
   const showInfo = () => setPhase('info');
-  const backToDone = () => setPhase('done');
-  const isBusy = phase === 'downloading';
-  const headerIcon =
-    phase === 'done' ? icons.check :
-    phase === 'info' ? icons.question :
-    icons.music;
-  const iconAlt =
-    phase === 'done' ? 'Setup complete' :
-    phase === 'info' ? 'Help' :
-    'Music';
+  const backToIntro = () => setPhase('intro');
+  const headerIcon = phase === 'info' ? icons.question : icons.music;
+  const iconAlt = phase === 'info' ? 'Help' : 'Music';
   const buttonBaseStyle = { flex: 1, minHeight: 47, padding: '0 14px', border: 0, borderRadius: 8, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: '18px' };
-  const primaryButtonStyle = {...buttonBaseStyle, background: '#67c1f5', color: '#111' };
-  const secondaryButtonStyle = {...buttonBaseStyle, background: '#2a2a2a', color: '#ddd' };
-  const disabledButtonStyle = {...buttonBaseStyle, background: '#2a2a2a', color: '#aaa', cursor: 'default' };
+  const primaryButtonStyle = { ...buttonBaseStyle, background: '#67c1f5', color: '#111' };
+  const secondaryButtonStyle = { ...buttonBaseStyle, background: '#2a2a2a', color: '#ddd' };
   const buttonLabel = (icon: string, text: string) => (
     <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, height: 18, lineHeight: '18px' }}>
       {icon && <img src={icon} alt="" style={{ width: 15, height: 15, display: 'block', objectFit: 'contain', flex: '0 0 15px' }} />}
       <span style={{ display: 'block', lineHeight: '18px' }}>{text}</span>
     </span>
   );
-  const accentTone =
-    phase === 'done' ? 'green' :
-    phase === 'info' ? 'gold' :
-    'blue';
-  const headerBg =
-    accentTone === 'green' ? 'rgba(53,196,106,.14)' :
-    accentTone === 'gold' ? 'rgba(245,200,75,.13)' :
-    'rgba(103,193,245,.13)';
-  const headerBorder =
-    accentTone === 'green' ? '1px solid rgba(53,196,106,.35)' :
-    accentTone === 'gold' ? '1px solid rgba(245,200,75,.34)' :
-    '1px solid rgba(103,193,245,.3)';
-  const headerShadow =
-    accentTone === 'green' ? '0 0 32px rgba(53,196,106,.28)' :
-    accentTone === 'gold' ? '0 0 32px rgba(245,200,75,.18)' :
-    '0 0 32px rgba(103,193,245,.18)';
+  const headerBg = phase === 'info' ? 'rgba(245,200,75,.13)' : 'rgba(103,193,245,.13)';
+  const headerBorder = phase === 'info' ? '1px solid rgba(245,200,75,.34)' : '1px solid rgba(103,193,245,.3)';
+  const headerShadow = phase === 'info' ? '0 0 32px rgba(245,200,75,.18)' : '0 0 32px rgba(103,193,245,.18)';
 
   return (
     <>
@@ -386,72 +335,44 @@ const SetupModal: React.FC = () => {
         <div style={{ padding: '28px 28px 12px', textAlign: 'center' }}>
           <div style={{ width: 54, height: 54, margin: '0 auto 14px', borderRadius: '50%', background: headerBg, border: headerBorder, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: headerShadow }}>
             {headerIcon ? (
-              <img src={headerIcon} alt={iconAlt} style={{ width: phase === 'done' ? 34 : 32, height: phase === 'done' ? 34 : 32, display: 'block', objectFit: 'contain' }} />
+              <img src={headerIcon} alt={iconAlt} style={{ width: 32, height: 32, display: 'block', objectFit: 'contain' }} />
             ) : (
-              <div style={{ width: 34, height: 34, borderRadius: '50%', background: phase === 'done' ? '#35c46a' : '#67c1f5' }} />
+              <div style={{ width: 34, height: 34, borderRadius: '50%', background: '#67c1f5' }} />
             )}
           </div>
           <h2 style={{ margin: '0 0 8px', color: '#fff', fontSize: 22, lineHeight: 1.2 }}>
             {phase === 'info' ? 'How It Works' : 'Game Theme Song'}
           </h2>
-          <div style={{ fontSize: 12, color: '#8d8d8d', textTransform: 'uppercase', letterSpacing:.5 }}>
-            {phase === 'intro' && 'helper required'}
-            {phase === 'downloading' && `downloading ${progress}%`}
-            {phase === 'done' && 'successful'}
-            {phase === 'error' && 'download failed'}
+          <div style={{ fontSize: 12, color: '#8d8d8d', textTransform: 'uppercase', letterSpacing: .5 }}>
+            {phase === 'intro' && 'ready to play'}
             {phase === 'info' && 'quick guide'}
           </div>
         </div>
         <div style={{ padding: '10px 28px 8px', fontSize: 14, lineHeight: 1.55, color: '#c7c7c7' }}>
           {phase === 'intro' && (
             <div>
-              To play music from each game page, this plugin needs to download yt-dlp.exe, a helper file used to find playable audio. The download is about 18 MB and is saved inside the plugin folder.
-              <div style={{ marginTop: 10, color: '#969696', fontSize: 13 }}>You can install it now or choose Later. If you choose Later, this message will appear again the next time Steam starts.</div>
+              Game Theme Song plays each game's theme music in the background when you open its page in your Steam Library. No setup needed — everything works out of the box.
+              <div style={{ marginTop: 10, color: '#969696', fontSize: 13 }}>You can adjust the music volume anytime in the plugin settings.</div>
             </div>
           )}
-          {phase === 'downloading' && message}
-          {phase === 'done' && message}
-          {phase === 'error' && message}
           {phase === 'info' && (
             <div>
-              Open a game in your Steam Library and the plugin will search for a matching theme song, then play it in the background. The first play for a game can take longer because the plugin has to search and prepare a fresh audio link.
-              <div style={{ marginTop: 10 }}>After that, the result is cached for a while, so returning to the same game is usually much faster.</div>
+              Open a game in your Steam Library and the plugin will search for a matching theme song, then play it in the background. The first play for a game can take a few seconds because the plugin has to find a fresh audio link.
+              <div style={{ marginTop: 10 }}>After that, the result is cached for a while, so returning to the same game starts much faster.</div>
             </div>
           )}
         </div>
-        {(phase === 'downloading' || phase === 'done') && (
-          <div style={{ padding: '12px 28px 0' }}>
-            <div style={{ height: 6, background: 'rgba(255,255,255,.08)', borderRadius: 3, overflow: 'hidden' }}>
-              <div style={{ width: `${progress}%`, height: '100%', background: phase === 'done' ? '#35c46a' : '#67c1f5', transition: 'width.15s' }} />
-            </div>
-          </div>
-        )}
         <div style={{ display: 'flex', gap: 10, padding: '24px 28px 28px' }}>
           {phase === 'intro' && (
             <>
-              <button onClick={later} style={secondaryButtonStyle}>Later</button>
-              <button onClick={start} style={primaryButtonStyle}>{buttonLabel(icons.musicDark, 'Download')}</button>
-            </>
-          )}
-          {phase === 'downloading' && (
-            <button disabled style={disabledButtonStyle}>Installing...</button>
-          )}
-          {phase === 'done' && (
-            <>
-              <button onClick={close} style={secondaryButtonStyle}>{buttonLabel(icons.exit, 'Exit')}</button>
-              <button onClick={showInfo} style={primaryButtonStyle}>{buttonLabel(icons.questionDark, 'How It Works')}</button>
+              <button onClick={showInfo} style={secondaryButtonStyle}>{buttonLabel(icons.question, 'How It Works')}</button>
+              <button onClick={close} style={primaryButtonStyle}>{buttonLabel(icons.exitDark, 'Got It')}</button>
             </>
           )}
           {phase === 'info' && (
             <>
-              <button onClick={backToDone} style={secondaryButtonStyle}>Back</button>
-              <button onClick={close} style={primaryButtonStyle}>{buttonLabel(icons.exitDark, 'Exit')}</button>
-            </>
-          )}
-          {phase === 'error' && (
-            <>
-              <button onClick={later} style={secondaryButtonStyle}>Later</button>
-              <button onClick={start} disabled={isBusy} style={primaryButtonStyle}>{buttonLabel(icons.musicDark, 'Retry')}</button>
+              <button onClick={backToIntro} style={secondaryButtonStyle}>Back</button>
+              <button onClick={close} style={primaryButtonStyle}>{buttonLabel(icons.exitDark, 'Got It')}</button>
             </>
           )}
         </div>
@@ -482,12 +403,14 @@ async function playForApp(appId: number) {
 
     backendLog(`backend response ${JSON.stringify(resp)}`);
     if (mySeq !== activeSeq) return;
-    if (resp?.error === 'ytdlp_not_installed') {
-      showSetupModal();
+    if (!resp?.ok || (!resp.url && !resp.video_id)) {
+      warn('no audio for', name, resp?.error);
       return;
     }
-    if (!resp?.ok || !resp.url) {
-      warn('no audio for', name, resp?.error);
+
+    if (resp.embed && resp.video_id) {
+      backendLog(`playing ${name} via embed ${resp.video_id}`);
+      playEmbed(String(resp.video_id), mySeq, getSeq);
       return;
     }
 
@@ -498,7 +421,13 @@ async function playForApp(appId: number) {
     await invalidateAudio({ app_id: appId });
     const raw2 = await getThemeAudio({ app_id: appId, game_name: name, force_refresh: true });
     const r2 = typeof raw2 === 'string' ? JSON.parse(raw2) : raw2;
-    if (mySeq === activeSeq && r2?.ok && r2.url) await playUrl(r2.url, mySeq, getSeq);
+    if (mySeq !== activeSeq || !r2?.ok) return;
+    if (r2.embed && r2.video_id) {
+      backendLog(`playing ${name} via embed ${r2.video_id}`);
+      playEmbed(String(r2.video_id), mySeq, getSeq);
+      return;
+    }
+    if (r2.url) await playUrl(r2.url, mySeq, getSeq);
   } catch (e) {
     warn('playForApp crashed', e);
   }
@@ -575,7 +504,7 @@ const SettingsContent: React.FC = () => {
         const raw = await getBackendSettings();
         const s = typeof raw === 'string' ? JSON.parse(raw) : raw;
         if (s && typeof s === 'object') {
-          state.settings = {...state.settings,...s };
+          state.settings = { ...state.settings, ...s };
           setPercent(Math.round(state.settings.volume * 100));
           if (audioEl) audioEl.volume = state.settings.volume;
         }
@@ -590,6 +519,7 @@ const SettingsContent: React.FC = () => {
     state.settings.volume = vol;
     void setBackendSetting({ key: 'volume', value: vol }).catch(e => warn('save volume failed', e));
     if (audioEl && !audioEl.paused) audioEl.volume = vol;
+    if (embedEl && embedReady) embedCommand('setVolume', [Math.round(vol * 100)]);
   };
   return (
     <SliderField
@@ -616,15 +546,14 @@ const SettingsContent: React.FC = () => {
 export default definePlugin(() => {
   backendLog('frontend mounted');
   void loadSettingsOnce();
-  setTimeout(() => void maybeShowSetup(), 1000);
-  setTimeout(() => void maybeShowSetup(), 5000);
+  setTimeout(() => maybeShowWelcome(), 1500);
   startPolling();
   return {
     title: 'Game Theme Song',
     icon: <IconsModule.Music />,
     content: <SettingsContent />,
     onDismount() {
-      removeSetupPatch();
+      removeWelcomePatch();
     },
   };
 });

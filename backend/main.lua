@@ -5,32 +5,29 @@ local ok_fs, fs = pcall(require, "fs"); if not ok_fs then fs = nil end
 local ok_utils, utils = pcall(require, "utils"); if not ok_utils then utils = nil end
 local ok_http, http = pcall(require, "http"); if not ok_http then http = nil end
 
--- Win32 FFI убран — вызывает краш плагина при загрузке
-local ok_ffi = false
-local ffi = nil
-
 local function resolve_plugin_dir()
     local source = debug.getinfo(1, "S").source or ""
     if source:sub(1, 1) == "@" then source = source:sub(2) end
     local dir = source:match("^(.+)[/\\]backend[/\\][^/\\]+$")
     if dir then return dir end
-    return millennium.steam_path().. "/millennium/plugins/Game Theme Song on Game Page"
+    return millennium.steam_path() .. "/millennium/plugins/Game Theme Song"
 end
 
 local PLUGIN_DIR = resolve_plugin_dir():gsub("/", "\\")
-local CACHE_FILE = PLUGIN_DIR.. "\\cache.json"
-local CONFIG_FILE = PLUGIN_DIR.. "\\settings.json"
-local ICON_DIR = PLUGIN_DIR.. "\\icons"
-local YTDLP_PATH = PLUGIN_DIR.. "\\yt-dlp.exe"
-local YTDLP_PART = PLUGIN_DIR.. "\\yt-dlp.exe.part"
-local WORKER_VBS = PLUGIN_DIR.. "\\worker.vbs"
-local QUEUE_DIR = PLUGIN_DIR.. "\\queue"
-local WORKER_ALIVE = QUEUE_DIR.. "\\worker.alive"
-local WORKER_VERSION_FILE = QUEUE_DIR.. "\\worker.expected_version"
-local DOWNLOAD_DONE = QUEUE_DIR.. "\\ytdlp-download.done"
-local WORKER_VERSION = "2026-06-10-single-window-fix"
-local YTDLP_URL = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe"
-local CONFIG_VERSION = 8
+local CACHE_FILE = PLUGIN_DIR .. "\\cache.json"
+local CONFIG_FILE = PLUGIN_DIR .. "\\settings.json"
+local ICON_DIR = PLUGIN_DIR .. "\\icons"
+local AUDIO_DIR = (millennium.steam_path():gsub("/", "\\")) .. "\\steamui\\game_theme_song"
+local LOOPBACK_BASE = "https://steamloopback.host/game_theme_song/"
+local QUEUE_DIR = PLUGIN_DIR .. "\\queue"
+local LEGACY_FILES = {
+    PLUGIN_DIR .. "\\yt-dlp.exe",
+    PLUGIN_DIR .. "\\yt-dlp.exe.part",
+    QUEUE_DIR .. "\\worker.alive",
+    QUEUE_DIR .. "\\ytdlp-download.done",
+    QUEUE_DIR .. "\\ytdlp-install.ps1",
+}
+local CONFIG_VERSION = 9
 
 local DEFAULT_SETTINGS = {
     config_version = CONFIG_VERSION,
@@ -38,12 +35,10 @@ local DEFAULT_SETTINGS = {
     volume = 0.35,
     fade_seconds = 1.5,
     search_suffix = " theme song",
-    cache_ttl_seconds = 3 * 60 * 60,
 }
 
 local cache = {}
 local settings = {}
-local start_worker
 
 local function safe_decode(str)
     if not str or str == "" then return nil end
@@ -68,40 +63,6 @@ local function write_file(path, data)
     return true
 end
 
-local function file_size(path)
-    local f = io.open(path, "rb")
-    if not f then return 0 end
-    local size = f:seek("end") or 0
-    f:close()
-    return size
-end
-
-local function file_exists(path)
-    if fs and fs.exists then return fs.exists(path) end
-    local f = io.open(path, "rb")
-    if f then f:close(); return true end
-    return false
-end
-
-local function ensure_dir(path)
-    if fs and fs.create_directories then fs.create_directories(path) end
-end
-
-local function sleep_ms(ms)
-    if utils and utils.sleep then
-        utils.sleep(ms)
-        return
-    end
-    local deadline = os.clock() + ms / 1000
-    while os.clock() < deadline do end
-end
-
-local function spawn_hidden(cmdline)
-    if utils and utils.exec then
-        utils.exec(cmdline)
-    end
-end
-
 local function merge_defaults(target, defaults)
     for k, v in pairs(defaults) do
         if target[k] == nil then target[k] = v end
@@ -124,15 +85,14 @@ local function save_settings()
     write_file(CONFIG_FILE, json.encode(settings))
 end
 
-local function ytdlp_present()
-    return file_size(YTDLP_PATH) >= 1024 * 1024
+local function cleanup_legacy_worker()
+    write_file(QUEUE_DIR .. "\\worker.expected_version", "stop-" .. tostring(os.time()))
+    for _, path in ipairs(LEGACY_FILES) do
+        pcall(os.remove, path)
+    end
 end
 
 local b64chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
-local b64lookup = {}
-for i = 1, #b64chars do
-    b64lookup[b64chars:sub(i, i)] = i - 1
-end
 
 local function base64_encode(input)
     input = tostring(input or "")
@@ -163,370 +123,451 @@ local function base64_encode(input)
     return table.concat(out)
 end
 
-local function base64_decode(data)
-    data = tostring(data or ""):gsub("%s", "")
-    local out = {}
-    local out_i = 1
-    for i = 1, #data, 4 do
-        local c1 = data:sub(i, i)
-        local c2 = data:sub(i + 1, i + 1)
-        local c3 = data:sub(i + 2, i + 2)
-        local c4 = data:sub(i + 3, i + 3)
-        local b1 = b64lookup[c1]
-        local b2 = b64lookup[c2]
-        if b1 == nil or b2 == nil then break end
-        local b3 = c3 == "=" and nil or b64lookup[c3]
-        local b4 = c4 == "=" and nil or b64lookup[c4]
-        local n = b1 * 262144 + b2 * 4096 + (b3 or 0) * 64 + (b4 or 0)
-        out[out_i] = string.char(math.floor(n / 65536) % 256)
-        out_i = out_i + 1
-        if b3 ~= nil then
-            out[out_i] = string.char(math.floor(n / 256) % 256)
-            out_i = out_i + 1
-        end
-        if b4 ~= nil then
-            out[out_i] = string.char(n % 256)
-            out_i = out_i + 1
-        end
-    end
-    return table.concat(out)
-end
-
 function get_icon_data_uri(name)
     local safe = tostring(name or ""):match("^([%w%-]+%.svg)$")
     if not safe then return json.encode({ ok = false, error = "bad_icon_name" }) end
-    local data = read_file(ICON_DIR.. "\\".. safe)
+    local data = read_file(ICON_DIR .. "\\" .. safe)
     if not data then return json.encode({ ok = false, error = "icon_not_found" }) end
-    return json.encode({ ok = true, data_uri = "data:image/svg+xml;base64,".. base64_encode(data) })
+    return json.encode({ ok = true, data_uri = "data:image/svg+xml;base64," .. base64_encode(data) })
 end
 
-function ytdlp_download_url()
-    return json.encode({ ok = true, url = YTDLP_URL })
-end
-
-function ytdlp_upload_begin()
-    pcall(os.remove, YTDLP_PART)
-    pcall(os.remove, YTDLP_PATH)
-    return json.encode({ ok = true })
-end
-
-function ytdlp_upload_chunk(params)
-    local ok, result = pcall(function()
-        local offset = tonumber(type(params) == "table" and params.offset or params) or 0
-        local data = type(params) == "table" and params.data or ""
-        local decoded = base64_decode(data)
-        local mode = offset == 0 and "wb" or "ab"
-        local f = io.open(YTDLP_PART, mode)
-        if not f then return { ok = false, error = "open_failed" } end
-        f:write(decoded)
-        f:close()
-        return { ok = true, written = #decoded, size = file_size(YTDLP_PART) }
+local function url_encode(text)
+    if utils and utils.url_encode then return utils.url_encode(text) end
+    return tostring(text):gsub("[^%w%-_%.~]", function(c)
+        return string.format("%%%02X", string.byte(c))
     end)
-    if not ok then return json.encode({ ok = false, error = tostring(result) }) end
-    return json.encode(result)
 end
 
-function ytdlp_upload_finish(params)
-    local expected_size = tonumber(type(params) == "table" and params.expected_size or params) or 0
-    local size = file_size(YTDLP_PART)
-    if size < 1024 * 1024 then
-        return json.encode({ ok = false, error = "too_small", size = size })
-    end
-    if expected_size > 0 and math.abs(size - expected_size) > 16 then
-        return json.encode({ ok = false, error = "size_mismatch", size = size, expected = expected_size })
-    end
-    pcall(os.remove, YTDLP_PATH)
-    local ok = os.rename(YTDLP_PART, YTDLP_PATH)
-    if not ok then return json.encode({ ok = false, error = "rename_failed" }) end
-    return json.encode({ ok = true, size = file_size(YTDLP_PATH) })
+local INNERTUBE_CLIENTS = {
+    {
+        label = "ios",
+        client_name_id = "5",
+        user_agent = "com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)",
+        context = {
+            client = {
+                clientName = "IOS",
+                clientVersion = "20.10.4",
+                deviceMake = "Apple",
+                deviceModel = "iPhone16,2",
+                osName = "iPhone",
+                osVersion = "18.3.2.22D82",
+                hl = "en",
+            },
+        },
+    },
+    {
+        label = "android",
+        client_name_id = "3",
+        user_agent = "com.google.android.youtube/20.10.38 (Linux; U; Android 11) gzip",
+        context = {
+            client = {
+                clientName = "ANDROID",
+                clientVersion = "20.10.38",
+                androidSdkVersion = 30,
+                osName = "Android",
+                osVersion = "11",
+                hl = "en",
+            },
+        },
+    },
+    {
+        label = "android_vr",
+        client_name_id = "28",
+        user_agent = "com.google.android.apps.youtube.vr.oculus/1.62.27 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip",
+        context = {
+            client = {
+                clientName = "ANDROID_VR",
+                clientVersion = "1.62.27",
+                deviceMake = "Oculus",
+                deviceModel = "Quest 3",
+                androidSdkVersion = 32,
+                osName = "Android",
+                osVersion = "12L",
+                hl = "en",
+            },
+        },
+    },
+    {
+        label = "ios_music",
+        client_name_id = "26",
+        user_agent = "com.google.ios.youtubemusic/7.27.0 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)",
+        context = {
+            client = {
+                clientName = "IOS_MUSIC",
+                clientVersion = "7.27.0",
+                deviceMake = "Apple",
+                deviceModel = "iPhone16,2",
+                osName = "iPhone",
+                osVersion = "18.3.2.22D82",
+                hl = "en",
+            },
+        },
+    },
+    {
+        label = "android_music",
+        client_name_id = "21",
+        user_agent = "com.google.android.apps.youtube.music/7.27.52 (Linux; U; Android 11) gzip",
+        context = {
+            client = {
+                clientName = "ANDROID_MUSIC",
+                clientVersion = "7.27.52",
+                androidSdkVersion = 30,
+                osName = "Android",
+                osVersion = "11",
+                hl = "en",
+            },
+        },
+    },
+}
+
+local function http_available()
+    return http ~= nil and http.request ~= nil
 end
 
-local last_dl_start = 0
-
-function ytdlp_hidden_download_start()
-    ensure_dir(QUEUE_DIR)
-    if ytdlp_present() then return json.encode({ ok = true, already_present = true }) end
-
-    local now = os.time()
-    if now - last_dl_start < 5 then
-        return json.encode({ ok = true, already_running = true })
-    end
-    last_dl_start = now
-
-    local current_flag = read_file(DOWNLOAD_DONE)
-    if file_size(YTDLP_PART) > 0 and not current_flag then
-        return json.encode({ ok = true, already_running = true })
-    end
-    pcall(os.remove, DOWNLOAD_DONE)
-    pcall(os.remove, YTDLP_PART)
-    pcall(os.remove, YTDLP_PATH)
-
-    -- Пишем PS1 скрипт на диск
-    local ps1_path = QUEUE_DIR.. "\\ytdlp-install.ps1"
-    local done_flag = DOWNLOAD_DONE
-    local dest = YTDLP_PATH
-    local tmp = YTDLP_PART
-    local url = YTDLP_URL
-    local ps1 = table.concat({
-        "$ErrorActionPreference='Stop'",
-        "$url='".. url.. "'",
-        "$dest='".. dest.. "'",
-        "$tmp='".. tmp.. "'",
-        "$doneFlag='".. done_flag.. "'",
-        "$scriptPath='".. ps1_path.. "'",
-        "$Host.UI.RawUI.WindowTitle='Game Theme Song - Downloading yt-dlp'",
-        "$Host.UI.RawUI.BackgroundColor='Black'",
-        "Clear-Host",
-        "function Draw{param([int]$p,[string]$s,[string]$c='Cyan')",
-        "  Clear-Host",
-        "  Write-Host ''",
-        "  Write-Host '  ==============================================' -ForegroundColor DarkCyan",
-        "  Write-Host '      Game Theme Song  -  yt-dlp Installer'     -ForegroundColor White",
-        "  Write-Host '  ==============================================' -ForegroundColor DarkCyan",
-        "  Write-Host ''",
-        "  $b=[int]($p/2.5);Write-Host \"  [$('#'*$b)$('-'*(40-$b))] $p%\" -ForegroundColor $c",
-        "  Write-Host ''",
-        "  Write-Host \"  $s\" -ForegroundColor $c",
-        "  Write-Host ''",
-        "}",
-        "try{",
-        "  Draw 0 'Starting download...' 'Yellow'",
-        "  $wc=New-Object System.Net.WebClient",
-        "  $wc.Headers.Add('User-Agent','Mozilla/5.0 (game-theme-song)')",
-        "  $lastPct=0",
-        "  Register-ObjectEvent $wc DownloadProgressChanged -Action{",
-        "    $pct=$EventArgs.ProgressPercentage",
-        "    if($pct -ne $script:lastPct){",
-        "      $script:lastPct=$pct",
-        "      $recv=[math]::Round($EventArgs.BytesReceived/1MB,1)",
-        "      $tot=[math]::Round($EventArgs.TotalBytesToReceive/1MB,1)",
-        "      Draw $pct \"Downloading... $recv MB / $tot MB\" 'Cyan'",
-        "    }",
-        "  }|Out-Null",
-        "  $wc.DownloadFileAsync([uri]$url,$tmp)",
-        "  while($wc.IsBusy){Start-Sleep -Milliseconds 100}",
-        "  $wc.Dispose()",
-        "  Draw 100 'Finalizing...' 'Yellow'",
-        "  $sz=(Get-Item $tmp).Length",
-        "  if($sz -lt 1048576){throw \"File too small: $sz bytes\"}",
-        "  Move-Item -Force $tmp $dest",
-        "  [IO.File]::WriteAllText($doneFlag,'ok:'+$sz)",
-        "  Draw 100 'Done! yt-dlp installed successfully.' 'Green'",
-        "  Start-Sleep -Seconds 2",
-        "}catch{",
-        "  [IO.File]::WriteAllText($doneFlag,'err:'+$_.Exception.Message)",
-        "  Write-Host ''",
-        "  Write-Host \"  ERROR: $($_.Exception.Message)\" -ForegroundColor Red",
-        "  Write-Host '  Press any key to close...' -ForegroundColor Gray",
-        "  $null=$Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')",
-        "}finally{",
-        "  Remove-Item -Force $scriptPath -ErrorAction SilentlyContinue",
-        "}",
-    }, "\n")
-    write_file(ps1_path, ps1)
-
-    -- ФИКС БАГА 1: запускаем PowerShell напрямую одним процессом.
-    -- Никаких промежуточных VBS-лаунчеров -> ровно одно окно с прогрессом.
-    spawn_hidden('powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Normal -File "'.. ps1_path.. '"')
-    return json.encode({ ok = true })
+local function duration_to_seconds(text)
+    local total = 0
+    for n in tostring(text):gmatch("%d+") do total = total * 60 + tonumber(n) end
+    return total
 end
 
-function ytdlp_hidden_download_status()
-    if ytdlp_present() then return json.encode({ state = "done", size = file_size(YTDLP_PATH) }) end
-    local flag = read_file(DOWNLOAD_DONE)
-    if not flag then return json.encode({ state = "running", size = file_size(YTDLP_PART) }) end
-    if flag:sub(1, 3) == "ok:" then
-        return json.encode({ state = "error", error = "download_finished_but_file_missing", size = file_size(YTDLP_PATH) })
-    end
-    return json.encode({ state = "error", error = flag })
-end
-
-local function write_expected_version()
-    ensure_dir(QUEUE_DIR)
-    write_file(WORKER_VERSION_FILE, WORKER_VERSION)
-end
-
-local function stop_existing_worker()
-    ensure_dir(QUEUE_DIR)
-    write_file(WORKER_VERSION_FILE, "stop-".. tostring(os.time()))
-    if file_exists(WORKER_ALIVE) then pcall(os.remove, WORKER_ALIVE) end
-end
-
-local function expected_version_matches()
-    local current = read_file(WORKER_VERSION_FILE)
-    if not current then return false end
-    current = current:gsub("%s+$", "")
-    return current == WORKER_VERSION
-end
-
-local function worker_alive()
-    if not expected_version_matches() then return false end
-    if not file_exists(WORKER_ALIVE) then return false end
-    if fs and fs.last_write_time then
-        local mtime = fs.last_write_time(WORKER_ALIVE)
-        if not mtime then return false end
-        return (os.time() - mtime) < 8
-    end
-    return true
-end
-
-start_worker = function()
-    if not ytdlp_present() then return false end
-    ensure_dir(QUEUE_DIR)
-    write_expected_version()
-    if file_exists(WORKER_ALIVE) then pcall(os.remove, WORKER_ALIVE) end
-    local cmd = 'wscript.exe //nologo //B "'.. WORKER_VBS.. '" --detach "'.. YTDLP_PATH.. '" "'.. QUEUE_DIR.. '" "'.. WORKER_ALIVE.. '" "'.. WORKER_VERSION.. '"'
-    logger:info("starting detached hidden yt-dlp worker")
-    spawn_hidden(cmd)
-    local waited = 0
-    while waited < 3000 and not worker_alive() do
-        sleep_ms(150)
-        waited = waited + 150
-    end
-    return worker_alive()
-end
-
-local function ensure_worker()
-    if worker_alive() then return true end
-    return start_worker()
-end
-
-local function safe_id(video_id)
-    return (tostring(video_id):gsub('[^%w_%-]', '_'))
-end
-
-local function split_lines(text)
-    local lines = {}
-    for line in tostring(text or ""):gmatch("([^\r\n]+)") do
-        lines[#lines + 1] = line
-    end
-    return lines
-end
-
-local function output_excerpt(text)
-    local compact = tostring(text or ""):gsub("[%r\n]+", " "):gsub("%s+", " ")
-    if #compact > 220 then compact = compact:sub(1, 220).. "..." end
-    return compact
-end
-
-local function is_stale_batch_req_error(output)
-    local lower = tostring(output or ""):lower()
-    return lower:find("batch file", 1, true) ~= nil
-        and lower:find(".req", 1, true) ~= nil
-        and lower:find("could not be read", 1, true) ~= nil
-end
-
-local function request_ytdlp_output(input)
-    local id = safe_id(input):sub(1, 80).. '_'.. tostring(os.time()).. '_'.. tostring(math.random(100000, 999999))
-    local req = QUEUE_DIR.. "\\".. id.. ".req"
-    local tmp = req.. ".tmp"
-    local resp = QUEUE_DIR.. "\\".. id.. ".resp"
-    pcall(os.remove, req)
-    pcall(os.remove, tmp)
-    pcall(os.remove, resp)
-    pcall(os.remove, QUEUE_DIR.. "\\".. id.. ".out")
-    pcall(os.remove, QUEUE_DIR.. "\\".. id.. ".err")
-    local f = io.open(tmp, "wb")
-    if not f then return nil, "request_open_failed" end
-    f:write(input.. "\n")
-    f:close()
-    if not os.rename(tmp, req) then return nil, "request_rename_failed" end
-    local waited = 0
-    while waited < 35000 and not file_exists(resp) do
-        sleep_ms(150)
-        waited = waited + 150
-    end
-    if not file_exists(resp) then return nil, "yt_dlp_timeout" end
-    local output = read_file(resp) or ""
-    pcall(os.remove, resp)
-    return output, nil
-end
-
-local function parse_ytdlp_output(output)
-    local lines = split_lines(output)
-    local url
-    local video_id = ""
-    local title = ""
-    for _, line in ipairs(lines) do
-        if line:find("^https?://") then
-            url = line
-            break
-        elseif line:match("^[%w_-]+$") and #line == 11 then
-            video_id = line
-        elseif title == "" then
-            title = line
+local function parse_video_candidates(body, max_count)
+    local out, seen = {}, {}
+    local pos = 1
+    while #out < max_count do
+        local s, e, vid = body:find('"videoId":"([%w_%-]+)"', pos)
+        if not s then break end
+        pos = e + 1
+        if #vid == 11 and not seen[vid] then
+            seen[vid] = true
+            local window = body:sub(e, e + 3000)
+            local dur_text = window:match('"lengthText":.-"simpleText":"([%d:]+)"')
+            out[#out + 1] = { id = vid, seconds = dur_text and duration_to_seconds(dur_text) or nil }
         end
     end
-    if url then
-        return {
-            url = url,
-            video_id = video_id,
-            title = title,
-        }
-    end
-    return nil
+    return out
 end
 
-local function restart_worker()
-    write_file(WORKER_VERSION_FILE, "restart-".. tostring(os.time()))
-    if file_exists(WORKER_ALIVE) then pcall(os.remove, WORKER_ALIVE) end
-    sleep_ms(500)
-    return start_worker()
-end
-
-local function resolve_via_ytdlp(input)
-    if not ytdlp_present() then return nil, "ytdlp_not_installed" end
-    for attempt = 1, 2 do
-        if not ensure_worker() then return nil, "worker_not_alive" end
-        local output, err = request_ytdlp_output(input)
-        if not output then return nil, err end
-        local parsed = parse_ytdlp_output(output)
-        if parsed then return parsed, nil end
-        if attempt == 1 and (output == "" or is_stale_batch_req_error(output)) then
-            logger:warn("yt-dlp worker returned empty/stale output; restarting worker")
-            restart_worker()
+local function order_candidates(candidates)
+    local short, medium, rest = {}, {}, {}
+    for _, c in ipairs(candidates) do
+        if c.seconds and c.seconds >= 60 and c.seconds <= 600 then
+            short[#short + 1] = c
+        elseif c.seconds and c.seconds <= 1200 then
+            medium[#medium + 1] = c
         else
-            logger:warn("yt-dlp output had no playable URL: ".. output_excerpt(output))
-            return nil, "bad_ytdlp_output"
+            rest[#rest + 1] = c
         end
     end
-    return nil, "bad_ytdlp_output"
+    local out = {}
+    for _, bucket in ipairs({ short, medium, rest }) do
+        for _, c in ipairs(bucket) do out[#out + 1] = c end
+    end
+    return out
 end
 
-local function resolve_audio(game_name)
-    if type(game_name) ~= "string" or game_name == "" then return nil end
-    local query = game_name.. (settings.search_suffix or "")
-    logger:info("resolve_audio: ".. query)
-    local result, err = resolve_via_ytdlp("ytsearch1:".. query)
-    if not result then
-        logger:warn("yt-dlp search failed: ".. tostring(err))
-        return nil
+local function search_video_ids(query)
+    if not http_available() then return nil, "http_module_missing" end
+    local url = "https://www.youtube.com/results?search_query=" .. url_encode(query)
+    local resp, err = http.request(url, {
+        method = "GET",
+        timeout = 15,
+        user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        headers = { ["Accept-Language"] = "en-US,en;q=0.9" },
+    })
+    if resp and resp.status == 200 and resp.body then
+        local candidates = parse_video_candidates(resp.body, 8)
+        if #candidates > 0 then return order_candidates(candidates), nil end
     end
-    return { url = result.url, video_id = result.video_id, title = result.title, source = "yt-dlp-search" }
+    local payload = json.encode({
+        context = { client = { clientName = "WEB", clientVersion = "2.20250312.04.00", hl = "en" } },
+        query = query,
+        params = "EgIQAQ==",
+    })
+    local resp2, err2 = http.request("https://www.youtube.com/youtubei/v1/search?prettyPrint=false", {
+        method = "POST",
+        data = payload,
+        timeout = 15,
+        user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        headers = { ["Content-Type"] = "application/json" },
+    })
+    if resp2 and resp2.status == 200 and resp2.body then
+        local candidates = parse_video_candidates(resp2.body, 8)
+        if #candidates > 0 then return order_candidates(candidates), nil end
+        return nil, "search_no_results"
+    end
+    return nil, "search_failed: " .. tostring(err or err2 or (resp and resp.status) or (resp2 and resp2.status))
 end
+
+local function pick_audio_format(formats)
+    if type(formats) ~= "table" then return nil end
+    local best_webm, best_mp4 = nil, nil
+    for _, f in ipairs(formats) do
+        local mime = tostring(f.mimeType or "")
+        if type(f.url) == "string" and f.url ~= "" and mime:find("^audio/") then
+            local bitrate = tonumber(f.bitrate) or 0
+            if mime:find("^audio/webm") then
+                if not best_webm or bitrate > (tonumber(best_webm.bitrate) or 0) then best_webm = f end
+            elseif mime:find("^audio/mp4") then
+                if not best_mp4 or bitrate > (tonumber(best_mp4.bitrate) or 0) then best_mp4 = f end
+            end
+        end
+    end
+    return best_webm or best_mp4
+end
+
+local function fetch_player(video_id, client)
+    local payload = json.encode({
+        context = client.context,
+        videoId = video_id,
+        contentCheckOk = true,
+        racyCheckOk = true,
+    })
+    local resp, err = http.request("https://www.youtube.com/youtubei/v1/player?prettyPrint=false", {
+        method = "POST",
+        data = payload,
+        timeout = 15,
+        user_agent = client.user_agent,
+        headers = {
+            ["Content-Type"] = "application/json",
+            ["X-Youtube-Client-Name"] = client.client_name_id,
+            ["X-Youtube-Client-Version"] = client.context.client.clientVersion,
+        },
+    })
+    if not resp then return nil, "player_request_failed: " .. tostring(err) end
+    if resp.status ~= 200 then return nil, "player_http_" .. tostring(resp.status) end
+    local data = safe_decode(resp.body)
+    if type(data) ~= "table" then return nil, "player_bad_json" end
+    local status = type(data.playabilityStatus) == "table" and data.playabilityStatus.status or "UNKNOWN"
+    if status ~= "OK" then return nil, "player_status_" .. tostring(status) end
+    local streaming = data.streamingData
+    if type(streaming) ~= "table" then return nil, "player_no_streaming_data" end
+    local fmt = pick_audio_format(streaming.adaptiveFormats) or pick_audio_format(streaming.formats)
+    if not fmt then return nil, "player_no_audio_format" end
+    local title = type(data.videoDetails) == "table" and data.videoDetails.title or ""
+    return { url = fmt.url, title = tostring(title or ""), mime = tostring(fmt.mimeType or ""), ua = client.user_agent }, nil
+end
+
+local function ext_for_mime(mime)
+    if tostring(mime):find("^audio/mp4") then return "m4a" end
+    return "webm"
+end
+
+local AUDIO_EXTS = { "webm", "m4a", "mp3" }
+
+local function download_file(key, ext, url, ua)
+    if not fs or not http or not http.download then return nil, "download_unsupported" end
+    pcall(fs.create_directories, AUDIO_DIR)
+    local filename = key .. "." .. ext
+    local path = AUDIO_DIR .. "\\" .. filename
+    for _, e in ipairs(AUDIO_EXTS) do
+        if e ~= ext then pcall(fs.remove, AUDIO_DIR .. "\\" .. key .. "." .. e) end
+    end
+    local result, err = http.download(url, path, { timeout = 180, user_agent = ua })
+    if not result or not result.success or result.status ~= 200 or (result.bytes_written or 0) <= 0 then
+        pcall(fs.remove, path)
+        local detail = err or (result and ("status_" .. tostring(result.status))) or "unknown"
+        return nil, "download_failed: " .. tostring(detail)
+    end
+    logger:info("downloaded " .. filename .. " (" .. tostring(result.bytes_written) .. " bytes)")
+    return filename, nil
+end
+
+local function download_audio(key, stream)
+    return download_file(key, ext_for_mime(stream.mime), stream.url, stream.ua)
+end
+
+local KHINSIDER_BASE = "https://downloads.khinsider.com"
+local BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+
+local function khinsider_get(url)
+    local resp, err = http.request(url, { method = "GET", timeout = 20, user_agent = BROWSER_UA })
+    if resp and resp.status == 200 and resp.body then return resp.body, nil end
+    return nil, tostring(err or (resp and resp.status) or "no_response")
+end
+
+local function norm_words(text)
+    local t = tostring(text):lower():gsub("[^%w]+", " "):gsub("^%s+", ""):gsub("%s+$", "")
+    return " " .. t .. " "
+end
+
+local function khinsider_pick_album(body, game_name)
+    local albums, seen = {}, {}
+    for href, title in body:gmatch('<a href="(/game%-soundtracks/album/[^"]+)">([^<]+)</a>') do
+        if not seen[href] then
+            seen[href] = true
+            albums[#albums + 1] = { href = href, title = title }
+        end
+    end
+    if #albums == 0 then return nil end
+    local target = norm_words(game_name)
+    local best, best_score = nil, 0
+    for i, a in ipairs(albums) do
+        local t = norm_words(a.title)
+        local score = 0
+        if t == target then score = 1000
+        elseif t:find(target, 1, true) then score = 500 end
+        if score > 0 then
+            local lt = a.title:lower()
+            if lt:find("sound effects", 1, true) or lt:find("concert", 1, true) or lt:find("remix", 1, true) then
+                score = score - 400
+            end
+            score = score - i
+        end
+        if score > best_score then best, best_score = a, score end
+    end
+    return best
+end
+
+local function khinsider_pick_track(body)
+    local tracks, seen = {}, {}
+    for href, name in body:gmatch('<td class="clickable%-row"><a href="(/game%-soundtracks/album/[^"]+%.mp3)">([^<]+)</a>') do
+        if not seen[href] then
+            seen[href] = true
+            tracks[#tracks + 1] = { href = href, name = name }
+        end
+    end
+    if #tracks == 0 then return nil end
+    local best, best_score = tracks[1], 0
+    for i, tr in ipairs(tracks) do
+        local n = " " .. tostring(tr.name):lower() .. " "
+        local score = 0
+        if n:find("main theme", 1, true) then score = 50
+        elseif n:find("theme", 1, true) then score = 40
+        elseif n:find("main menu", 1, true) then score = 35
+        elseif n:find("title", 1, true) then score = 25
+        elseif n:find("menu", 1, true) then score = 20 end
+        score = score - i
+        if score > best_score then best, best_score = tr, score end
+    end
+    return best
+end
+
+local function khinsider_resolve(game_name, key)
+    if not http_available() then return nil, "http_module_missing" end
+    local query = tostring(game_name):gsub("\226\132\162", ""):gsub("\194\174", ""):gsub("\194\169", "")
+    local body, err = khinsider_get(KHINSIDER_BASE .. "/search?search=" .. url_encode(query))
+    if not body then return nil, "khinsider_search_failed: " .. tostring(err) end
+    local album = khinsider_pick_album(body, query)
+    if not album then return nil, "khinsider_no_album" end
+    logger:info("khinsider album: " .. album.title)
+    local album_body, aerr = khinsider_get(KHINSIDER_BASE .. album.href)
+    if not album_body then return nil, "khinsider_album_failed: " .. tostring(aerr) end
+    local track = khinsider_pick_track(album_body)
+    if not track then return nil, "khinsider_no_tracks" end
+    logger:info("khinsider track: " .. track.name)
+    local track_body, terr = khinsider_get(KHINSIDER_BASE .. track.href)
+    if not track_body then return nil, "khinsider_track_failed: " .. tostring(terr) end
+    local mp3 = track_body:match('href="(https://[^"]+%.mp3)"')
+    if not mp3 then return nil, "khinsider_no_mp3_link" end
+    local filename, dl_err = download_file(key, "mp3", mp3, BROWSER_UA)
+    if not filename then return nil, dl_err end
+    return { file = filename, title = track.name .. " (" .. album.title .. ")" }, nil
+end
+
+local function resolve_stream(video_id, key)
+    local last_err = "no_clients"
+    local fallback = nil
+    for _, client in ipairs(INNERTUBE_CLIENTS) do
+        local result, err = fetch_player(video_id, client)
+        if result then
+            logger:info("resolved stream via " .. client.label .. " client")
+            local filename, dl_err = download_audio(key, result)
+            if filename then
+                return { file = filename, title = result.title }, nil
+            end
+            logger:warn("download via " .. client.label .. " failed: " .. tostring(dl_err))
+            last_err = tostring(dl_err)
+            if not fallback then fallback = result end
+        else
+            last_err = tostring(err)
+            logger:warn("client " .. client.label .. " failed: " .. last_err)
+        end
+    end
+    if fallback then
+        return { url = fallback.url, title = fallback.title, direct = true }, nil
+    end
+    return nil, last_err
+end
+
+local function resolve_audio(game_name, key)
+    if type(game_name) ~= "string" or game_name == "" then return nil, "missing_game_name" end
+    if not http_available() then return nil, "http_module_missing" end
+    local query = game_name .. (settings.search_suffix or "")
+    logger:info("resolve_audio: " .. query)
+    local candidates, search_err = search_video_ids(query)
+    if not candidates or #candidates == 0 then
+        logger:warn("youtube search failed: " .. tostring(search_err))
+        return nil, search_err or "search_no_results"
+    end
+    local fallback = nil
+    local last_err = "not_found"
+    for i = 1, math.min(#candidates, 3) do
+        local c = candidates[i]
+        logger:info("trying video " .. c.id .. " (" .. tostring(c.seconds or "?") .. "s)")
+        local stream, stream_err = resolve_stream(c.id, key)
+        if stream and stream.file then
+            stream.video_id = c.id
+            return stream, nil
+        end
+        if stream and stream.direct and not fallback then
+            stream.video_id = c.id
+            fallback = stream
+        end
+        last_err = tostring(stream_err or "download_failed")
+    end
+    if candidates[1] then
+        return { embed = true, video_id = candidates[1].id }, nil
+    end
+    if fallback then
+        logger:warn("no candidate downloaded, using direct url fallback")
+        return fallback, nil
+    end
+    return nil, last_err
+end
+
 
 function get_theme_audio(app_id, force_refresh, game_name)
     local ok, result = pcall(function()
-        if not ytdlp_present() then return json.encode({ ok = false, error = "ytdlp_not_installed" }) end
         if not game_name or game_name == "" then return json.encode({ ok = false, error = "missing_game_name" }) end
         local key = tostring(app_id)
-        local ttl = tonumber(settings.cache_ttl_seconds) or 10800
-        if not force_refresh and cache[key] and cache[key].url and ((os.time() - (cache[key].ts or 0)) < ttl) then
-            local e = cache[key]
-            return json.encode({ ok = true, url = e.url, title = e.title, video_id = e.video_id, cached = true })
+        local entry = cache[key]
+        if not force_refresh and entry and entry.file and fs and fs.exists and fs.exists(AUDIO_DIR .. "\\" .. entry.file) then
+            local url = LOOPBACK_BASE .. entry.file .. "?v=" .. tostring(entry.ts or 0)
+            return json.encode({ ok = true, url = url, title = entry.title, video_id = entry.video_id, cached = true })
         end
-        local r = resolve_audio(game_name)
-        if not r then return json.encode({ ok = false, error = "not_found" }) end
-        cache[key] = { url = r.url, video_id = r.video_id, title = r.title, source = r.source, ts = os.time() }
-        save_cache()
-        return json.encode({ ok = true, url = r.url, title = r.title, video_id = r.video_id, cached = false })
+        local r, kh_err = khinsider_resolve(game_name, key)
+        if not r then
+            logger:info("khinsider failed (" .. tostring(kh_err) .. "), trying youtube")
+            local yt, yt_err = resolve_audio(game_name, key)
+            if not yt then return json.encode({ ok = false, error = yt_err or "not_found" }) end
+            r = yt
+        end
+        if r.file then
+            local ts = os.time()
+            cache[key] = { file = r.file, video_id = r.video_id, title = r.title, ts = ts }
+            save_cache()
+            local url = LOOPBACK_BASE .. r.file .. "?v=" .. tostring(ts)
+            return json.encode({ ok = true, url = url, title = r.title, video_id = r.video_id, cached = false })
+        end
+        if r.embed then
+            logger:warn("all downloads failed, using embed player fallback")
+            return json.encode({ ok = true, embed = true, video_id = r.video_id, title = r.title, cached = false })
+        end
+        logger:warn("all downloads failed, falling back to direct url")
+        return json.encode({ ok = true, url = r.url, title = r.title, video_id = r.video_id, cached = false, direct = true })
     end)
-    if not ok then logger:warn("get_theme_audio crashed: ".. tostring(result)); return json.encode({ ok = false, error = "internal_error" }) end
+    if not ok then logger:warn("get_theme_audio crashed: " .. tostring(result)); return json.encode({ ok = false, error = "internal_error" }) end
     return result
 end
 
 function invalidate_audio(app_id)
-    cache[tostring(app_id)] = nil
+    local key = tostring(app_id)
+    if fs and fs.remove then
+        pcall(fs.remove, AUDIO_DIR .. "\\" .. key .. ".webm")
+        pcall(fs.remove, AUDIO_DIR .. "\\" .. key .. ".m4a")
+        pcall(fs.remove, AUDIO_DIR .. "\\" .. key .. ".mp3")
+    end
+    cache[key] = nil
     save_cache()
     return json.encode({ ok = true })
 end
@@ -544,20 +585,16 @@ function set_setting(key, value)
     return json.encode({ ok = true })
 end
 
-function welcome_get_state()
-    return json.encode({ ok = true, ytdlp_present = ytdlp_present(), ytdlp_size = file_size(YTDLP_PATH) })
-end
-
 function log_frontend(message)
-    logger:info("[frontend] ".. tostring(message))
+    logger:info("[frontend] " .. tostring(message))
     return json.encode({ ok = true })
 end
 
 local function on_load()
     load_state()
     millennium.ready()
-    stop_existing_worker()
-    logger:info("Game Theme Song loaded in lazy hidden-worker mode")
+    cleanup_legacy_worker()
+    logger:info("Game Theme Song loaded in direct-http mode (no external processes)")
 end
 
 local function on_unload()
