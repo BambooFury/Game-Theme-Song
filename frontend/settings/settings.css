@@ -144,7 +144,7 @@
   align-items: center;
   justify-content: center;
   padding: 28px;
-  background: rgba(4, 6, 10, 0.78);
+  background: #07090d;
   font-family: 'Motiva Sans','Segoe UI',Arial,sans-serif;
   -webkit-font-smoothing: antialiased;
   animation: gts-lib-fade 0.18s ease;
