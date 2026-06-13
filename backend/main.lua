@@ -61,8 +61,25 @@ local cache = {}
 local settings = {}
 local custom = {}
 
-local MAX_JSON_BYTES = 8 * 1024 * 1024
-local MAX_JSON_DEPTH = 64
+local MAX_JSON_BYTES = 1 * 1024 * 1024
+local MAX_JSON_DEPTH = 32
+local MAX_HTTP_BYTES = 3 * 1024 * 1024
+local MAX_TITLE_LEN = 200
+local MAX_LIST_ITEMS = 500
+
+local function sanitize_text(s, max_len)
+    s = tostring(s or ""):gsub("[%z\1-\8\11\12\14-\31\127]", "")
+    max_len = max_len or MAX_TITLE_LEN
+    if #s > max_len then s = s:sub(1, max_len) end
+    return s
+end
+
+local function cap_body(body)
+    if type(body) == "string" and #body > MAX_HTTP_BYTES then
+        return body:sub(1, MAX_HTTP_BYTES)
+    end
+    return body
+end
 
 local function json_safe_to_decode(str, max_depth)
     if type(str) ~= "string" then return false end
@@ -111,6 +128,15 @@ local function safe_decode(str, tag)
     return val
 end
 
+local function safe_encode(val, tag)
+    local ok, res = pcall(json.encode, val)
+    if not ok then
+        logger:warn(string.format("json.encode[%s] failed: %s", tostring(tag or "?"), tostring(res)))
+        return nil
+    end
+    return res
+end
+
 local function read_file(path)
     local f = io.open(path, "rb")
     if not f then return nil end
@@ -143,15 +169,15 @@ local function load_state()
 end
 
 local function save_cache()
-    write_file(CACHE_FILE, json.encode(cache))
+    local s = safe_encode(cache, "cache"); if s then write_file(CACHE_FILE, s) end
 end
 
 local function save_settings()
-    write_file(CONFIG_FILE, json.encode(settings))
+    local s = safe_encode(settings, "settings"); if s then write_file(CONFIG_FILE, s) end
 end
 
 local function save_custom()
-    write_file(CUSTOM_FILE, json.encode(custom))
+    local s = safe_encode(custom, "custom"); if s then write_file(CUSTOM_FILE, s) end
 end
 
 local function cleanup_legacy_worker()
@@ -540,7 +566,7 @@ local BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
 
 local function khinsider_get(url)
     local resp, err = http.request(url, { method = "GET", timeout = 20, user_agent = BROWSER_UA })
-    if resp and resp.status == 200 and resp.body then return resp.body, nil end
+    if resp and resp.status == 200 and resp.body then return cap_body(resp.body), nil end
     return nil, tostring(err or (resp and resp.status) or "no_response")
 end
 
@@ -633,14 +659,15 @@ local sc_client_id = nil
 local function sc_fetch_client_id()
     local resp = http.request("https://soundcloud.com/", { user_agent = SC_UA })
     if not resp or resp.status ~= 200 or not resp.body then return nil, "sc_home_failed" end
+    local home_body = cap_body(resp.body)
     local assets = {}
-    for u in resp.body:gmatch('src="(https://a%-v2%.sndcdn%.com/assets/[^"]+%.js)"') do
+    for u in home_body:gmatch('src="(https://a%-v2%.sndcdn%.com/assets/[^"]+%.js)"') do
         assets[#assets + 1] = u
     end
     for i = #assets, 1, -1 do
         local js = http.request(assets[i], { user_agent = SC_UA })
         if js and js.status == 200 and js.body then
-            local cid = js.body:match('client_id%s*[:=]%s*"(%w+)"')
+            local cid = cap_body(js.body):match('client_id%s*[:=]%s*"(%w+)"')
             if cid and #cid == 32 then return cid, nil end
         end
     end
@@ -668,7 +695,7 @@ local function sc_api(path_and_query)
     if not resp or resp.status ~= 200 or not resp.body then
         return nil, "sc_api_failed_" .. tostring(resp and resp.status)
     end
-    return safe_decode(resp.body, "sc_api"), nil
+    return safe_decode(cap_body(resp.body), "sc_api"), nil
 end
 
 local function sc_resolve(game_name, key, exclude_set, dl_base)
@@ -703,7 +730,7 @@ local function sc_resolve(game_name, key, exclude_set, dl_base)
             tried = tried + 1
             local sep = c.stream_api:find("?", 1, true) and "&" or "?"
             local resp = http.request(c.stream_api .. sep .. "client_id=" .. tostring(sc_client_id), { user_agent = SC_UA })
-            local meta = (resp and resp.status == 200 and resp.body) and safe_decode(resp.body, "sc_meta") or nil
+            local meta = (resp and resp.status == 200 and resp.body) and safe_decode(cap_body(resp.body), "sc_meta") or nil
             if meta and type(meta.url) == "string" then
                 local file, dl_err = download_file(dl_base, "mp3", meta.url, SC_UA)
                 if file then return { file = file, title = c.title }, nil end
@@ -758,10 +785,10 @@ local function resolve_theme(app_id, force_refresh, game_name, exclude)
             end
         end
         local ts = os.time()
-        cache[key] = { file = r.file, title = r.title, ts = ts, slot = target_slot }
+        cache[key] = { file = r.file, title = sanitize_text(r.title), ts = ts, slot = target_slot }
         save_cache()
         local url = LOOPBACK_BASE .. r.file .. "?v=" .. tostring(ts)
-        return json.encode({ ok = true, url = url, title = r.title, cached = false })
+        return json.encode({ ok = true, url = url, title = sanitize_text(r.title), cached = false })
     end)
     if not ok then logger:warn("resolve_theme crashed: " .. tostring(result)); return json.encode({ ok = false, error = "internal_error" }) end
     return result
@@ -799,10 +826,12 @@ end
 
 function get_custom_list()
     local ok, result = pcall(function()
-        local items = {}
+        local items, count = {}, 0
         for key, entry in pairs(custom) do
             if entry and entry.file and fs and fs.exists and fs.exists(join(AUDIO_DIR, entry.file)) then
-                items[tostring(key)] = { title_b64 = base64_encode(tostring(entry.title or "")), name_b64 = base64_encode(tostring(entry.name or "")) }
+                items[tostring(key)] = { title_b64 = base64_encode(sanitize_text(entry.title or "")), name_b64 = base64_encode(sanitize_text(entry.name or "")) }
+                count = count + 1
+                if count >= MAX_LIST_ITEMS then break end
             end
         end
         return json.encode({ ok = true, items = items })
@@ -832,8 +861,9 @@ local function store_custom(app_id, game_name, filename, title, data, ext_hint, 
     local fname = "custom_" .. key .. "." .. ext
     for e in pairs(CUSTOM_EXTS) do pcall(fs.remove, join(AUDIO_DIR, "custom_" .. key .. "." .. e)) end
     if not write_file(join(AUDIO_DIR, fname), bytes) then return json.encode({ ok = false, error = "write_failed" }) end
-    local clean_title = tostring(resolved_title or ""):gsub("%.[%w]+$", "")
+    local clean_title = sanitize_text(tostring(resolved_title or ""):gsub("%.[%w]+$", ""))
     if clean_title == "" then clean_title = "Custom track" end
+    resolved_name = sanitize_text(resolved_name or "")
     local ts = os.time()
     custom[key] = { file = fname, title = clean_title, name = resolved_name or "", ts = ts }
     save_custom()
@@ -945,12 +975,14 @@ end
 
 function get_cache_list()
     local ok, result = pcall(function()
-        local items = {}
+        local items, count = {}, 0
         for key, entry in pairs(cache) do
             if entry and entry.file then
                 local path = join(AUDIO_DIR, entry.file)
                 if fs and fs.exists and fs.exists(path) then
-                    items[tostring(key)] = { title_b64 = base64_encode(tostring(entry.title or "")), bytes = file_size(path), ts = entry.ts or 0 }
+                    items[tostring(key)] = { title_b64 = base64_encode(sanitize_text(entry.title or "")), bytes = file_size(path), ts = entry.ts or 0 }
+                    count = count + 1
+                    if count >= MAX_LIST_ITEMS then break end
                 end
             end
         end
