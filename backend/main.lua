@@ -33,7 +33,6 @@ local PLUGIN_DIR = norm_path(resolve_plugin_dir())
 local CACHE_FILE = join(PLUGIN_DIR, "cache.json")
 local CONFIG_FILE = join(PLUGIN_DIR, "settings.json")
 local CUSTOM_FILE = join(PLUGIN_DIR, "custom.json")
-local ICON_DIR = join(PLUGIN_DIR, "icons")
 local AUDIO_DIR = join(norm_path(millennium.steam_path()), "steamui", "game_theme_song")
 local LOOPBACK_BASE = "https://steamloopback.host/game_theme_song/"
 local QUEUE_DIR = join(PLUGIN_DIR, "queue")
@@ -177,14 +176,6 @@ local function base64_decode(data)
     end
     if n > 0 then parts[#parts + 1] = table.concat(out, "", 1, n) end
     return table.concat(parts)
-end
-
-function get_icon_data_uri(name)
-    local safe = tostring(name or ""):match("^([%w%-]+%.svg)$")
-    if not safe then return json.encode({ ok = false, error = "bad_icon_name" }) end
-    local data = read_file(join(ICON_DIR, safe))
-    if not data then return json.encode({ ok = false, error = "icon_not_found" }) end
-    return json.encode({ ok = true, data_uri = "data:image/svg+xml;base64," .. base64_encode(data) })
 end
 
 local function url_encode(text)
@@ -750,12 +741,6 @@ local function store_custom(app_id, game_name, filename, title, data, ext_hint, 
     save_custom()
     local url = LOOPBACK_BASE .. fname .. "?v=" .. tostring(ts)
     return json.encode({ ok = true, url = url })
-end
-
-function set_custom_music(app_id, game_name, filename, title, data)
-    local ok, result = pcall(store_custom, app_id, game_name, filename, title, data)
-    if not ok then logger:warn("set_custom_music crashed: " .. tostring(result)); return json.encode({ ok = false, error = "internal_error" }) end
-    return result
 end
 
 function set_custom_music_begin(app_id)
