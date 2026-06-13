@@ -33,7 +33,6 @@ local PLUGIN_DIR = norm_path(resolve_plugin_dir())
 local CACHE_FILE = join(PLUGIN_DIR, "cache.json")
 local CONFIG_FILE = join(PLUGIN_DIR, "settings.json")
 local CUSTOM_FILE = join(PLUGIN_DIR, "custom.json")
-local ICON_DIR = join(PLUGIN_DIR, "icons")
 local AUDIO_DIR = join(norm_path(millennium.steam_path()), "steamui", "game_theme_song")
 local LOOPBACK_BASE = "https://steamloopback.host/game_theme_song/"
 local QUEUE_DIR = join(PLUGIN_DIR, "queue")
@@ -55,6 +54,7 @@ local DEFAULT_SETTINGS = {
     loop = true,
     max_seconds = 0,
     stop_on_launch = true,
+    manual_search = true,
 }
 
 local cache = {}
@@ -179,14 +179,6 @@ local function base64_decode(data)
     return table.concat(parts)
 end
 
-function get_icon_data_uri(name)
-    local safe = tostring(name or ""):match("^([%w%-]+%.svg)$")
-    if not safe then return json.encode({ ok = false, error = "bad_icon_name" }) end
-    local data = read_file(join(ICON_DIR, safe))
-    if not data then return json.encode({ ok = false, error = "icon_not_found" }) end
-    return json.encode({ ok = true, data_uri = "data:image/svg+xml;base64," .. base64_encode(data) })
-end
-
 local function url_encode(text)
     if utils and utils.url_encode then return utils.url_encode(text) end
     return tostring(text):gsub("[^%w%-_%.~]", function(c)
@@ -294,6 +286,24 @@ local function order_candidates(candidates, game_name)
     for _, c in ipairs(candidates) do c.score = score_candidate(c, game_name) end
     table.sort(candidates, function(a, b) return (a.score or 0) > (b.score or 0) end)
     return candidates
+end
+
+local function build_exclude(exclude)
+    local set = {}
+    if type(exclude) == "string" and exclude ~= "" then exclude = safe_decode(exclude) end
+    if type(exclude) == "table" then
+        for _, title in ipairs(exclude) do
+            if type(title) == "string" and title ~= "" then
+                set[norm_words(title)] = true
+            end
+        end
+    end
+    return set
+end
+
+local function is_excluded(exclude_set, title)
+    if not exclude_set then return false end
+    return exclude_set[norm_words(title or "")] == true
 end
 
 local AUDIO_EXTS = { "webm", "m4a", "mp3", "ogg", "wav", "flac" }
@@ -459,24 +469,27 @@ local function pick_install_track(dir)
     return best
 end
 
-local function local_resolve(game_name, key)
+local function local_resolve(game_name, key, exclude_set, dl_base)
     if not (fs and fs.list and fs.copy and fs.exists) then return nil, "local_unsupported" end
+    dl_base = dl_base or key
     local picked = pick_soundtrack_track(game_name)
     if not picked then
         local dir = find_install_dir(key)
         if dir then picked = pick_install_track(dir) end
     end
     if not picked then return nil, "no_local_audio" end
+    local picked_title = (tostring(picked.name):gsub("%.%w+$", ""))
+    if is_excluded(exclude_set, picked_title) then return nil, "local_excluded" end
     local ext = tostring(picked.name):match("%.(%w+)$")
     if not ext then return nil, "no_local_audio" end
     ext = ext:lower()
     pcall(fs.create_directories, AUDIO_DIR)
     for _, e in ipairs(AUDIO_EXTS) do
-        if e ~= ext then pcall(fs.remove, join(AUDIO_DIR, key .. "." .. e)) end
+        if e ~= ext then pcall(fs.remove, join(AUDIO_DIR, dl_base .. "." .. e)) end
     end
-    local copied = fs.copy(picked.path, join(AUDIO_DIR, key .. "." .. ext))
+    local copied = fs.copy(picked.path, join(AUDIO_DIR, dl_base .. "." .. ext))
     if not copied then return nil, "local_copy_failed" end
-    return { file = key .. "." .. ext, title = (tostring(picked.name):gsub("%.%w+$", "")) }
+    return { file = dl_base .. "." .. ext, title = (tostring(picked.name):gsub("%.%w+$", "")) }
 end
 
 local KHINSIDER_BASE = "https://downloads.khinsider.com"
@@ -516,31 +529,29 @@ local function khinsider_pick_album(body, game_name)
     return best
 end
 
-local function khinsider_pick_track(body)
+local function khinsider_pick_tracks(body)
     local tracks, seen = {}, {}
     for href, name in body:gmatch('<td class="clickable%-row"><a href="(/game%-soundtracks/album/[^"]+%.mp3)">([^<]+)</a>') do
         if not seen[href] then
             seen[href] = true
-            tracks[#tracks + 1] = { href = href, name = name }
+            local n = " " .. tostring(name):lower() .. " "
+            local score = 0
+            if n:find("main theme", 1, true) then score = 50
+            elseif n:find("theme", 1, true) then score = 40
+            elseif n:find("main menu", 1, true) then score = 35
+            elseif n:find("title", 1, true) then score = 25
+            elseif n:find("menu", 1, true) then score = 20 end
+            score = score - #tracks
+            tracks[#tracks + 1] = { href = href, name = name, score = score }
         end
     end
     if #tracks == 0 then return nil end
-    local best, best_score = tracks[1], 0
-    for i, tr in ipairs(tracks) do
-        local n = " " .. tostring(tr.name):lower() .. " "
-        local score = 0
-        if n:find("main theme", 1, true) then score = 50
-        elseif n:find("theme", 1, true) then score = 40
-        elseif n:find("main menu", 1, true) then score = 35
-        elseif n:find("title", 1, true) then score = 25
-        elseif n:find("menu", 1, true) then score = 20 end
-        score = score - i
-        if score > best_score then best, best_score = tr, score end
-    end
-    return best
+    table.sort(tracks, function(a, b) return (a.score or 0) > (b.score or 0) end)
+    return tracks
 end
 
-local function khinsider_resolve(game_name, key)
+local function khinsider_resolve(game_name, key, exclude_set, dl_base)
+    dl_base = dl_base or key
     if not http_available() then return nil, "http_module_missing" end
     local query = tostring(game_name):gsub("\226\132\162", ""):gsub("\194\174", ""):gsub("\194\169", "")
     local body, err = khinsider_get(KHINSIDER_BASE .. "/search?search=" .. url_encode(query))
@@ -549,15 +560,28 @@ local function khinsider_resolve(game_name, key)
     if not album then return nil, "khinsider_no_album" end
     local album_body, aerr = khinsider_get(KHINSIDER_BASE .. album.href)
     if not album_body then return nil, "khinsider_album_failed: " .. tostring(aerr) end
-    local track = khinsider_pick_track(album_body)
-    if not track then return nil, "khinsider_no_tracks" end
-    local track_body, terr = khinsider_get(KHINSIDER_BASE .. track.href)
-    if not track_body then return nil, "khinsider_track_failed: " .. tostring(terr) end
-    local mp3 = track_body:match('href="(https://[^"]+%.mp3)"')
-    if not mp3 then return nil, "khinsider_no_mp3_link" end
-    local filename, dl_err = download_file(key, "mp3", mp3, BROWSER_UA)
-    if not filename then return nil, dl_err end
-    return { file = filename, title = track.name .. " (" .. album.title .. ")" }, nil
+    local tracks = khinsider_pick_tracks(album_body)
+    if not tracks then return nil, "khinsider_no_tracks" end
+    local last_err = "khinsider_no_tracks"
+    for _, track in ipairs(tracks) do
+        local title = track.name .. " (" .. album.title .. ")"
+        if not is_excluded(exclude_set, title) then
+            local track_body, terr = khinsider_get(KHINSIDER_BASE .. track.href)
+            if not track_body then
+                last_err = "khinsider_track_failed: " .. tostring(terr)
+            else
+                local mp3 = track_body:match('href="(https://[^"]+%.mp3)"')
+                if not mp3 then
+                    last_err = "khinsider_no_mp3_link"
+                else
+                    local filename, dl_err = download_file(dl_base, "mp3", mp3, BROWSER_UA)
+                    if filename then return { file = filename, title = title }, nil end
+                    last_err = dl_err
+                end
+            end
+        end
+    end
+    return nil, last_err
 end
 
 local SC_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
@@ -604,7 +628,8 @@ local function sc_api(path_and_query)
     return safe_decode(resp.body), nil
 end
 
-local function sc_resolve(game_name, key)
+local function sc_resolve(game_name, key, exclude_set, dl_base)
+    dl_base = dl_base or key
     local query = game_name .. (settings.search_suffix or "")
     local data, err = sc_api("/search/tracks?q=" .. url_encode(query) .. "&limit=15")
     if not data or type(data.collection) ~= "table" then return nil, err or "sc_search_failed" end
@@ -628,62 +653,83 @@ local function sc_resolve(game_name, key)
     end
     if #candidates == 0 then return nil, "sc_no_results" end
     order_candidates(candidates, game_name)
-    for i = 1, math.min(#candidates, 3) do
-        local c = candidates[i]
-        local sep = c.stream_api:find("?", 1, true) and "&" or "?"
-        local resp = http.request(c.stream_api .. sep .. "client_id=" .. tostring(sc_client_id), { user_agent = SC_UA })
-        local meta = (resp and resp.status == 200 and resp.body) and safe_decode(resp.body) or nil
-        if meta and type(meta.url) == "string" then
-            local file, dl_err = download_file(key, "mp3", meta.url, SC_UA)
-            if file then return { file = file, title = c.title }, nil end
-            logger:warn("sc download failed: " .. tostring(dl_err))
+    local tried = 0
+    for _, c in ipairs(candidates) do
+        if tried >= 3 then break end
+        if not is_excluded(exclude_set, c.title) then
+            tried = tried + 1
+            local sep = c.stream_api:find("?", 1, true) and "&" or "?"
+            local resp = http.request(c.stream_api .. sep .. "client_id=" .. tostring(sc_client_id), { user_agent = SC_UA })
+            local meta = (resp and resp.status == 200 and resp.body) and safe_decode(resp.body) or nil
+            if meta and type(meta.url) == "string" then
+                local file, dl_err = download_file(dl_base, "mp3", meta.url, SC_UA)
+                if file then return { file = file, title = c.title }, nil end
+                logger:warn("sc download failed: " .. tostring(dl_err))
+            end
         end
     end
     return nil, "sc_download_failed"
 end
 
-function get_theme_audio(app_id, force_refresh, game_name)
+local function resolve_theme(app_id, force_refresh, game_name, exclude)
     local ok, result = pcall(function()
         if not game_name or game_name == "" then return json.encode({ ok = false, error = "missing_game_name" }) end
         local key = tostring(app_id)
+        local exclude_set = build_exclude(exclude)
+        local rerolling = next(exclude_set) ~= nil
         local cust = custom[key]
-        if cust and cust.file and fs and fs.exists and fs.exists(join(AUDIO_DIR, cust.file)) then
+        if not rerolling and cust and cust.file and fs and fs.exists and fs.exists(join(AUDIO_DIR, cust.file)) then
             local url = LOOPBACK_BASE .. cust.file .. "?v=" .. tostring(cust.ts or 0)
             return json.encode({ ok = true, url = url, title = cust.title, cached = true, custom = true })
         end
         local entry = cache[key]
-        if not force_refresh and entry and entry.file and fs and fs.exists and fs.exists(join(AUDIO_DIR, entry.file)) then
+        if not force_refresh and not rerolling and entry and entry.file and fs and fs.exists and fs.exists(join(AUDIO_DIR, entry.file)) then
             local url = LOOPBACK_BASE .. entry.file .. "?v=" .. tostring(entry.ts or 0)
             return json.encode({ ok = true, url = url, title = entry.title, cached = true })
         end
+        local target_slot = "a"
+        if rerolling then
+            target_slot = (entry and entry.slot == "b") and "a" or "b"
+        end
+        local dl_base = target_slot == "b" and (key .. "_b") or key
         local variants = name_variants(game_name)
-        local r = local_resolve(game_name, key)
+        local r = local_resolve(game_name, key, exclude_set, dl_base)
         local kh_err
         if not (r and r.file) then
             for _, q in ipairs(variants) do
-                r, kh_err = khinsider_resolve(q, key)
+                r, kh_err = khinsider_resolve(q, key, exclude_set, dl_base)
                 if r and r.file then break end
             end
         end
         if not (r and r.file) then
             local sc_err
             for _, q in ipairs(variants) do
-                r, sc_err = sc_resolve(q, key)
+                r, sc_err = sc_resolve(q, key, exclude_set, dl_base)
                 if r and r.file then break end
             end
             if not (r and r.file) then
                 logger:warn("no theme audio for " .. tostring(game_name) .. " (khinsider: " .. tostring(kh_err) .. ", soundcloud: " .. tostring(sc_err) .. ")")
-                return json.encode({ ok = false, error = sc_err or kh_err or "not_found" })
+                local err_code = sc_err or kh_err or "not_found"
+                if rerolling then err_code = "no_alternative" end
+                return json.encode({ ok = false, error = err_code })
             end
         end
         local ts = os.time()
-        cache[key] = { file = r.file, title = r.title, ts = ts }
+        cache[key] = { file = r.file, title = r.title, ts = ts, slot = target_slot }
         save_cache()
         local url = LOOPBACK_BASE .. r.file .. "?v=" .. tostring(ts)
         return json.encode({ ok = true, url = url, title = r.title, cached = false })
     end)
-    if not ok then logger:warn("get_theme_audio crashed: " .. tostring(result)); return json.encode({ ok = false, error = "internal_error" }) end
+    if not ok then logger:warn("resolve_theme crashed: " .. tostring(result)); return json.encode({ ok = false, error = "internal_error" }) end
     return result
+end
+
+function get_theme_audio(app_id, force_refresh, game_name)
+    return resolve_theme(app_id, force_refresh, game_name, nil)
+end
+
+function reroll_theme(app_id, exclude, force_refresh, game_name)
+    return resolve_theme(app_id, force_refresh, game_name, exclude)
 end
 
 function invalidate_audio(app_id)
@@ -750,12 +796,6 @@ local function store_custom(app_id, game_name, filename, title, data, ext_hint, 
     save_custom()
     local url = LOOPBACK_BASE .. fname .. "?v=" .. tostring(ts)
     return json.encode({ ok = true, url = url })
-end
-
-function set_custom_music(app_id, game_name, filename, title, data)
-    local ok, result = pcall(store_custom, app_id, game_name, filename, title, data)
-    if not ok then logger:warn("set_custom_music crashed: " .. tostring(result)); return json.encode({ ok = false, error = "internal_error" }) end
-    return result
 end
 
 function set_custom_music_begin(app_id)
