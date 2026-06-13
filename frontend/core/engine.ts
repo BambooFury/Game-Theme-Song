@@ -112,17 +112,19 @@ async function playUrl(url: string, mySeq: number, active: () => number): Promis
   if (mySeq !== active()) return false;
   limitStopping = false;
   const a = ensureAudio();
+  clearFade();
   a.onerror = () => {
     const err = a.error;
     reportError(`audio element error: code=${err?.code ?? '?'} message=${err?.message ?? ''} networkState=${a.networkState} readyState=${a.readyState}`);
   };
+  a.volume = 0;
+  a.muted = false;
   if (a.src !== url) {
+    a.pause();
     a.src = url;
     a.load();
   }
   a.loop = state.settings.loop;
-  a.volume = 0;
-  a.muted = false;
   const tryPlay = async (): Promise<string> => {
     try {
       await a.play();
