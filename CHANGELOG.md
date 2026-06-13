@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.4.1](https://github.com/BambooFury/Game-Theme-Song/compare/v1.4.0...v1.4.1) (2026-06-13)
+
+
+### Bug Fixes
+
+* add search to downloaded music window ([ec65b56](https://github.com/BambooFury/Game-Theme-Song/commit/ec65b568c86823d69fcfa1a497449ff17e9eed82))
+* allow editing music volume by typing the number ([1381f0e](https://github.com/BambooFury/Game-Theme-Song/commit/1381f0eeff7f92d1ef8f2468c9b023342433772c))
+* **backend:** guard native json.decode against malformed responses + log decode source ([4f4cc08](https://github.com/BambooFury/Game-Theme-Song/commit/4f4cc0817562fa0df88957e595db02f19bdfe7f4))
+
 ## [1.4.0](https://github.com/BambooFury/Game-Theme-Song/compare/v1.3.0...v1.4.0) (2026-06-13)
 
 
