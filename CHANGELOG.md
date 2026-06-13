@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.2.1](https://github.com/BambooFury/Game-Theme-Song/compare/v1.2.0...v1.2.1) (2026-06-13)
+
+
+### Performance
+
+* opaque library overlay to fix fps drop during playback ([86f6025](https://github.com/BambooFury/Game-Theme-Song/commit/86f60252c51287572ad5366030996854850aae64))
+
+
+### Documentation
+
+* document all settings and custom music in readme ([40263fa](https://github.com/BambooFury/Game-Theme-Song/commit/40263fa23731274204674d07580566ed4662a5c0))
+
 ## [1.2.0](https://github.com/BambooFury/Game-Theme-Song/compare/v1.1.1...v1.2.0) (2026-06-13)
 
 
