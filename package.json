@@ -14,7 +14,7 @@
 	},
 	"type": "module",
 	"name": "game-theme-song",
-	"version": "1.2.0",
+	"version": "1.2.1",
 	"description": "Plays a game's theme music in the background on its Steam library page.",
 	"main": "./frontend/index.jsx",
 	"author": "BambooFury",
