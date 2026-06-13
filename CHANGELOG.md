@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.3.0](https://github.com/BambooFury/Game-Theme-Song/compare/v1.2.1...v1.3.0) (2026-06-13)
+
+
+### Features
+
+* manage downloaded music per game with delete ([5836cf9](https://github.com/BambooFury/Game-Theme-Song/commit/5836cf9b8dbec66371a196cc7d1a474d1e55be85))
+* song length limit in 5s steps with typeable input ([3330046](https://github.com/BambooFury/Game-Theme-Song/commit/3330046b4f5ade884fec65acdeba11b30ca78a8e))
+* song length limit in 5s steps with typeable input ([52ac7b0](https://github.com/BambooFury/Game-Theme-Song/commit/52ac7b0d4180b5f11c74d7bbaa14f72e9f07aea3))
+
 ## [1.2.1](https://github.com/BambooFury/Game-Theme-Song/compare/v1.2.0...v1.2.1) (2026-06-13)
 
 
