@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.4.2](https://github.com/BambooFury/Game-Theme-Song/compare/v1.4.1...v1.4.2) (2026-06-13)
+
+
+### Bug Fixes
+
+* harden JSON/HTTP boundary and reduce GC pressure to mitigate Mil… ([702ade7](https://github.com/BambooFury/Game-Theme-Song/commit/702ade72846b7637473308d3be734b7379e069e3))
+* harden JSON/HTTP boundary and reduce GC pressure to mitigate Millennium VM crash ([5fe15e1](https://github.com/BambooFury/Game-Theme-Song/commit/5fe15e16416b72e475e6e30b19e07e9f9e60e156))
+
 ## [1.4.1](https://github.com/BambooFury/Game-Theme-Song/compare/v1.4.0...v1.4.1) (2026-06-13)
 
 
