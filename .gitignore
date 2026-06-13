@@ -7,3 +7,4 @@ settings.json
 cache.json
 webkit/_assets.generated.ts
 frontend/_assets.generated.ts
+custom.json
