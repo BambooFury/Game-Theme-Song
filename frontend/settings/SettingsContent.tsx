@@ -111,6 +111,11 @@ export const SettingsContent: React.FC = () => {
       description={percent > 0 ? 'Background theme music volume.' : 'Theme music is muted.'}
       value={percent}
       valueLabel={`${percent}%`}
+      min={0}
+      max={100}
+      step={1}
+      editable
+      inputSuffix="%"
       onChange={onSlider}
     />
     <SliderRow
