@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.1.1](https://github.com/BambooFury/Game-Theme-Song/compare/v1.1.0...v1.1.1) (2026-06-13)
+
+
+### Bug Fixes
+
+* build filesystem paths with the platform separator so audio work… ([72cc433](https://github.com/BambooFury/Game-Theme-Song/commit/72cc43376a94a11b01f0308cffa1ce78d18d059f))
+* build filesystem paths with the platform separator so audio works on Linux ([b2ee9c9](https://github.com/BambooFury/Game-Theme-Song/commit/b2ee9c95ec0ea2376b30d569ed3b805f19e66711))
+
 ## [1.1.0](https://github.com/BambooFury/Game-Theme-Song/compare/v1.0.0...v1.1.0) (2026-06-12)
 
 
