@@ -12,6 +12,8 @@ const setBackendSetting = callable<[{ key: string; value: Primitive }], string>(
 const logFrontend = callable<[{ message: string }], string>('log_frontend');
 const getCacheInfo = callable<NoArgs, string>('get_cache_info');
 const clearAudioCache = callable<NoArgs, string>('clear_audio_cache');
+const getCacheList = callable<NoArgs, string>('get_cache_list');
+const clearCacheFor = callable<[{ app_id: number | string }], string>('clear_cache_for');
 const getCustomList = callable<NoArgs, string>('get_custom_list');
 const setCustomMusicBegin = callable<[{ app_id: number | string }], string>('set_custom_music_begin');
 const setCustomMusicChunk = callable<[{ app_id: number | string; chunk: string }], string>('set_custom_music_chunk');
@@ -217,6 +219,22 @@ let gCustomCountListeners: ((n: number | null) => void)[] = [];
 function setGlobalCustomCount(n: number | null) {
   gCustomCount = n;
   for (const fn of gCustomCountListeners) fn(n);
+}
+
+let cacheWindowOpen = false;
+let cacheWindowListeners: ((open: boolean) => void)[] = [];
+
+function setCacheWindowOpen(open: boolean) {
+  if (cacheWindowOpen === open) return;
+  cacheWindowOpen = open;
+  for (const fn of cacheWindowListeners) fn(open);
+}
+
+interface CacheInfo { count: number; bytes: number; }
+let gCacheInfoListeners: ((info: CacheInfo) => void)[] = [];
+
+function setGlobalCacheInfo(info: CacheInfo) {
+  for (const fn of gCacheInfoListeners) fn(info);
 }
 
 const SearchToast: React.FC = () => {
@@ -793,6 +811,177 @@ const LibraryWindow: React.FC = () => {
   );
 };
 
+interface CacheItem {
+  appid: number;
+  name: string;
+  title: string;
+  bytes: number;
+}
+
+function thumbCandidates(appid: number): string[] {
+  return [
+    `https://cdn.cloudflare.steamstatic.com/steam/apps/${appid}/header.jpg`,
+    `https://steamcdn-a.akamaihd.net/steam/apps/${appid}/header.jpg`,
+    `https://cdn.cloudflare.steamstatic.com/steam/apps/${appid}/capsule_231x87.jpg`,
+  ];
+}
+
+interface CacheRowProps {
+  key?: React.Key;
+  item: CacheItem;
+  busy: boolean;
+  onDelete: (item: CacheItem) => void;
+}
+
+const CacheRow = memo(function CacheRow({ item, busy, onDelete }: CacheRowProps) {
+  const urls = useMemo(() => thumbCandidates(item.appid), [item.appid]);
+  const [idx, setIdx] = useState(0);
+  const failed = idx >= urls.length;
+  return (
+    <div className="gts-cache-row">
+      <div className="gts-cache-thumb">
+        {failed
+          ? <div className="gts-cache-thumb-fb">{item.name.slice(0, 1).toUpperCase()}</div>
+          : <img src={urls[idx]} alt="" loading="lazy" decoding="async" onError={() => setIdx((i) => i + 1)} />}
+      </div>
+      <div className="gts-cache-info">
+        <div className="gts-cache-name">{item.name}</div>
+        <div className="gts-cache-meta">{item.title ? `${item.title} · ` : ''}{(item.bytes / 1048576).toFixed(1)} MB</div>
+      </div>
+      <button className="gts-lib-mini gts-danger" disabled={busy} title="Remove this track" onClick={() => onDelete(item)} dangerouslySetInnerHTML={{ __html: SETTINGS_ICONS.trash }} />
+    </div>
+  );
+});
+
+const CacheModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
+  const [items, setItems] = useState<CacheItem[] | null>(null);
+  const [busyId, setBusyId] = useState<number | null>(null);
+  const [clearingAll, setClearingAll] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const broadcast = (list: CacheItem[]) => {
+    setGlobalCacheInfo({ count: list.length, bytes: list.reduce((s, x) => s + x.bytes, 0) });
+  };
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const nameById = new Map<number, string>();
+        for (const a of getLibraryApps()) nameById.set(a.appid, a.name);
+        const raw = await getCacheList();
+        const info = typeof raw === 'string' ? JSON.parse(raw) : raw;
+        if (!info?.ok || !info.items) { setItems([]); return; }
+        const list: CacheItem[] = [];
+        for (const k in info.items) {
+          const it = info.items[k] || {};
+          const appid = Number(k);
+          list.push({ appid, name: nameById.get(appid) ?? `App ${appid}`, title: base64ToUtf8(it.title_b64 ?? ''), bytes: Number(it.bytes ?? 0) });
+        }
+        list.sort((a, b) => a.name.localeCompare(b.name));
+        setItems(list);
+        broadcast(list);
+      } catch (e) {
+        warn('getCacheList failed', e);
+        setItems([]);
+      }
+    })();
+    const esc = (ev: KeyboardEvent) => { if (ev.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', esc);
+    return () => window.removeEventListener('keydown', esc);
+  }, [onClose]);
+
+  const onDelete = useCallback(async (item: CacheItem) => {
+    setBusyId(item.appid);
+    setError(null);
+    try {
+      const raw = await clearCacheFor({ app_id: item.appid });
+      const r = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      if (!r?.ok) { setError('Could not remove this track.'); return; }
+      if (currentAppId === item.appid) { stopAudio(0); currentAppId = null; lastDetectedAppId = null; }
+      setItems((prev) => {
+        const next = (prev ?? []).filter((x) => x.appid !== item.appid);
+        broadcast(next);
+        return next;
+      });
+    } catch (e) {
+      warn('clearCacheFor failed', e);
+      setError('Could not remove this track.');
+    } finally {
+      setBusyId(null);
+    }
+  }, []);
+
+  const onClearAll = useCallback(async () => {
+    setClearingAll(true);
+    setError(null);
+    try {
+      await clearAudioCache();
+      stopAudio(0);
+      currentAppId = null;
+      lastDetectedAppId = null;
+      setItems([]);
+      broadcast([]);
+    } catch (e) {
+      warn('clearAudioCache failed', e);
+      setError('Could not clear downloaded music.');
+    } finally {
+      setClearingAll(false);
+    }
+  }, []);
+
+  const count = items?.length ?? 0;
+  const totalBytes = (items ?? []).reduce((s, x) => s + x.bytes, 0);
+
+  return (
+    <>
+      <style>{SETTINGS_CSS}</style>
+      <div className="gts-lib-dim" onMouseDown={(e: React.MouseEvent) => { if (e.target === e.currentTarget) onClose(); }}>
+        <div className="gts-lib-dlg" role="dialog" aria-modal="true">
+          <div className="gts-lib-head">
+            <span className="gts-lib-head-ic" dangerouslySetInnerHTML={{ __html: SETTINGS_ICONS.trash }} />
+            <span className="gts-lib-head-text">
+              <div className="gts-lib-title">Downloaded music</div>
+              <div className="gts-lib-sub">
+                {count > 0 ? `${count} ${count === 1 ? 'track' : 'tracks'} · ${(totalBytes / 1048576).toFixed(1)} MB on disk` : 'Nothing downloaded yet.'}
+              </div>
+            </span>
+            {count > 0 && <button className="gts-cache-clearall" disabled={clearingAll} onClick={() => { void onClearAll(); }}>{clearingAll ? 'Clearing…' : 'Clear all'}</button>}
+            <button className="gts-lib-x" aria-label="Close" onClick={onClose}>✕</button>
+          </div>
+
+          {error && <div className="gts-lib-foot" style={{ color: '#ff8585' }}>{error}</div>}
+
+          <div className="gts-cache-list">
+            {items === null && <div className="gts-lib-loading">Loading…</div>}
+            {items !== null && count === 0 && <div className="gts-lib-empty">Auto-downloaded themes will show up here.</div>}
+            {(items ?? []).map((item) => (
+              <CacheRow key={item.appid} item={item} busy={busyId === item.appid} onDelete={onDelete} />
+            ))}
+          </div>
+
+          <div className="gts-lib-foot">
+            Removing a track frees disk space — it re-downloads automatically next time you open that game's page.
+          </div>
+        </div>
+      </div>
+    </>
+  );
+};
+
+const CacheWindow: React.FC = () => {
+  const [open, setOpen] = useState(cacheWindowOpen);
+
+  useEffect(() => {
+    const fn = (v: boolean) => setOpen(v);
+    cacheWindowListeners.push(fn);
+    return () => { cacheWindowListeners = cacheWindowListeners.filter((x) => x !== fn); };
+  }, []);
+
+  if (!open) return null;
+
+  return <CacheModal onClose={() => setCacheWindowOpen(false)} />;
+};
+
 const SettingsContent: React.FC = () => {
   const [percent, setPercent] = useState(Math.round(state.settings.volume * 100));
   const [loop, setLoop] = useState(state.settings.loop);
@@ -800,12 +989,16 @@ const SettingsContent: React.FC = () => {
   const [stopOnLaunch, setStopOnLaunch] = useState(state.settings.stop_on_launch);
   const [cacheCount, setCacheCount] = useState<number | null>(null);
   const [cacheBytes, setCacheBytes] = useState(0);
-  const [clearing, setClearing] = useState(false);
   const [customCount, setCustomCount] = useState<number | null>(gCustomCount);
   useEffect(() => {
     const fn = (n: number | null) => setCustomCount(n);
     gCustomCountListeners.push(fn);
     return () => { gCustomCountListeners = gCustomCountListeners.filter((x) => x !== fn); };
+  }, []);
+  useEffect(() => {
+    const fn = (info: CacheInfo) => { setCacheCount(info.count); setCacheBytes(info.bytes); };
+    gCacheInfoListeners.push(fn);
+    return () => { gCacheInfoListeners = gCacheInfoListeners.filter((x) => x !== fn); };
   }, []);
   const refreshCustomCount = async () => {
     try {
@@ -867,21 +1060,6 @@ const SettingsContent: React.FC = () => {
     state.settings.max_seconds = v;
     void setBackendSetting({ key: 'max_seconds', value: v }).catch(e => warn('save max_seconds failed', e));
   };
-  const onClearCache = async () => {
-    if (clearing) return;
-    setClearing(true);
-    try {
-      await clearAudioCache();
-      stopAudio(0);
-      currentAppId = null;
-      lastDetectedAppId = null;
-      await refreshCacheInfo();
-    } catch (e) {
-      warn('clear cache failed', e);
-    } finally {
-      setClearing(false);
-    }
-  };
   const onStopOnLaunch = (checked: boolean) => {
     setStopOnLaunch(checked);
     state.settings.stop_on_launch = checked;
@@ -940,11 +1118,10 @@ const SettingsContent: React.FC = () => {
     />
     <ButtonRow
       icon={SETTINGS_ICONS.trash}
-      title="Clear downloaded music"
+      title="Downloaded music"
       description={cacheCount === null ? 'Checking…' : cacheCount === 0 ? 'Nothing downloaded yet.' : `${cacheCount} ${cacheCount === 1 ? 'track' : 'tracks'} · ${(cacheBytes / 1048576).toFixed(1)} MB on disk`}
-      buttonLabel={clearing ? 'Clearing…' : 'Clear'}
-      disabled={clearing || cacheCount === 0}
-      onClick={() => { void onClearCache(); }}
+      buttonLabel="Manage"
+      onClick={() => setCacheWindowOpen(true)}
     />
     </>
   );
@@ -954,6 +1131,7 @@ export default definePlugin(() => {
   void loadSettingsOnce();
   routerHook.addGlobalComponent('GTSSearchToast', SearchToast);
   routerHook.addGlobalComponent('GTSLibraryWindow', LibraryWindow);
+  routerHook.addGlobalComponent('GTSCacheWindow', CacheWindow);
   startPolling();
   registerLaunchStop();
   return {
@@ -963,6 +1141,7 @@ export default definePlugin(() => {
     onDismount() {
       routerHook.removeGlobalComponent('GTSSearchToast');
       routerHook.removeGlobalComponent('GTSLibraryWindow');
+      routerHook.removeGlobalComponent('GTSCacheWindow');
       launchHook?.unregister?.();
     },
   };

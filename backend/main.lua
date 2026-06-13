@@ -860,6 +860,42 @@ function clear_audio_cache()
     return result
 end
 
+function get_cache_list()
+    local ok, result = pcall(function()
+        local items = {}
+        for key, entry in pairs(cache) do
+            if entry and entry.file then
+                local path = join(AUDIO_DIR, entry.file)
+                if fs and fs.exists and fs.exists(path) then
+                    items[tostring(key)] = { title_b64 = base64_encode(tostring(entry.title or "")), bytes = file_size(path), ts = entry.ts or 0 }
+                end
+            end
+        end
+        return json.encode({ ok = true, items = items })
+    end)
+    if not ok then logger:warn("get_cache_list crashed: " .. tostring(result)); return json.encode({ ok = false, error = "internal_error" }) end
+    return result
+end
+
+function clear_cache_for(app_id)
+    local ok, result = pcall(function()
+        local key = tostring(app_id)
+        local entry = cache[key]
+        local freed = 0
+        if entry and entry.file then
+            local path = join(AUDIO_DIR, entry.file)
+            if fs and fs.exists and fs.exists(path) then freed = file_size(path) end
+            pcall(fs.remove, path)
+        end
+        for _, e in ipairs(AUDIO_EXTS) do pcall(fs.remove, join(AUDIO_DIR, key .. "." .. e)) end
+        cache[key] = nil
+        save_cache()
+        return json.encode({ ok = true, bytes = freed })
+    end)
+    if not ok then logger:warn("clear_cache_for crashed: " .. tostring(result)); return json.encode({ ok = false, error = "internal_error" }) end
+    return result
+end
+
 function log_frontend(message)
     logger:info("[frontend] " .. tostring(message))
     return json.encode({ ok = true })
