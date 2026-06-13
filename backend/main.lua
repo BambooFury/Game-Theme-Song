@@ -13,19 +13,35 @@ local function resolve_plugin_dir()
     return millennium.steam_path() .. "/millennium/plugins/Game Theme Song"
 end
 
-local PLUGIN_DIR = resolve_plugin_dir():gsub("/", "\\")
-local CACHE_FILE = PLUGIN_DIR .. "\\cache.json"
-local CONFIG_FILE = PLUGIN_DIR .. "\\settings.json"
-local ICON_DIR = PLUGIN_DIR .. "\\icons"
-local AUDIO_DIR = (millennium.steam_path():gsub("/", "\\")) .. "\\steamui\\game_theme_song"
+local SEP = package.config:sub(1, 1)
+
+local function norm_path(p)
+    p = tostring(p)
+    if SEP == "\\" then
+        p = p:gsub("/", "\\")
+        return (p:gsub("\\+$", ""))
+    end
+    p = p:gsub("\\", "/")
+    return (p:gsub("(.)/+$", "%1"))
+end
+
+local function join(...)
+    return table.concat({ ... }, SEP)
+end
+
+local PLUGIN_DIR = norm_path(resolve_plugin_dir())
+local CACHE_FILE = join(PLUGIN_DIR, "cache.json")
+local CONFIG_FILE = join(PLUGIN_DIR, "settings.json")
+local ICON_DIR = join(PLUGIN_DIR, "icons")
+local AUDIO_DIR = join(norm_path(millennium.steam_path()), "steamui", "game_theme_song")
 local LOOPBACK_BASE = "https://steamloopback.host/game_theme_song/"
-local QUEUE_DIR = PLUGIN_DIR .. "\\queue"
+local QUEUE_DIR = join(PLUGIN_DIR, "queue")
 local LEGACY_FILES = {
-    PLUGIN_DIR .. "\\yt-dlp.exe",
-    PLUGIN_DIR .. "\\yt-dlp.exe.part",
-    QUEUE_DIR .. "\\worker.alive",
-    QUEUE_DIR .. "\\ytdlp-download.done",
-    QUEUE_DIR .. "\\ytdlp-install.ps1",
+    join(PLUGIN_DIR, "yt-dlp.exe"),
+    join(PLUGIN_DIR, "yt-dlp.exe.part"),
+    join(QUEUE_DIR, "worker.alive"),
+    join(QUEUE_DIR, "ytdlp-download.done"),
+    join(QUEUE_DIR, "ytdlp-install.ps1"),
 }
 local CONFIG_VERSION = 12
 
@@ -89,7 +105,7 @@ local function save_settings()
 end
 
 local function cleanup_legacy_worker()
-    write_file(QUEUE_DIR .. "\\worker.expected_version", "stop-" .. tostring(os.time()))
+    write_file(join(QUEUE_DIR, "worker.expected_version"), "stop-" .. tostring(os.time()))
     for _, path in ipairs(LEGACY_FILES) do
         pcall(os.remove, path)
     end
@@ -129,7 +145,7 @@ end
 function get_icon_data_uri(name)
     local safe = tostring(name or ""):match("^([%w%-]+%.svg)$")
     if not safe then return json.encode({ ok = false, error = "bad_icon_name" }) end
-    local data = read_file(ICON_DIR .. "\\" .. safe)
+    local data = read_file(join(ICON_DIR, safe))
     if not data then return json.encode({ ok = false, error = "icon_not_found" }) end
     return json.encode({ ok = true, data_uri = "data:image/svg+xml;base64," .. base64_encode(data) })
 end
@@ -262,9 +278,9 @@ local function download_file(key, ext, url, ua)
     if not fs or not http or not http.download then return nil, "download_unsupported" end
     pcall(fs.create_directories, AUDIO_DIR)
     local filename = key .. "." .. ext
-    local path = AUDIO_DIR .. "\\" .. filename
+    local path = join(AUDIO_DIR, filename)
     for _, e in ipairs(AUDIO_EXTS) do
-        if e ~= ext then pcall(fs.remove, AUDIO_DIR .. "\\" .. key .. "." .. e) end
+        if e ~= ext then pcall(fs.remove, join(AUDIO_DIR, key .. "." .. e)) end
     end
     local result, err = http.download(url, path, { timeout = 180, user_agent = ua })
     if not result or not result.success or result.status ~= 200 or (result.bytes_written or 0) <= 0 then
@@ -297,16 +313,16 @@ end
 local function steam_libraries()
     local libs, seen = {}, {}
     local function add(p)
-        p = tostring(p):gsub("/", "\\"):gsub("\\+$", "")
+        p = norm_path(p)
         local lower = p:lower()
-        if #p > 2 and not seen[lower] and fs.exists(p .. "\\steamapps") then
+        if #p > 2 and not seen[lower] and fs.exists(join(p, "steamapps")) then
             seen[lower] = true
             libs[#libs + 1] = p
         end
     end
-    local root = millennium.steam_path():gsub("/", "\\")
+    local root = norm_path(millennium.steam_path())
     add(root)
-    local body = read_file(root .. "\\steamapps\\libraryfolders.vdf")
+    local body = read_file(join(root, "steamapps", "libraryfolders.vdf"))
     if body then
         for p in body:gmatch('"path"%s*"([^"]*)"') do add(vdf_unescape(p)) end
     end
@@ -315,11 +331,11 @@ end
 
 local function find_install_dir(key)
     for _, lib in ipairs(steam_libraries()) do
-        local manifest = read_file(lib .. "\\steamapps\\appmanifest_" .. key .. ".acf")
+        local manifest = read_file(join(lib, "steamapps", "appmanifest_" .. key .. ".acf"))
         if manifest then
             local dir = manifest:match('"installdir"%s*"([^"]*)"')
             if dir and dir ~= "" then
-                local full = lib .. "\\steamapps\\common\\" .. vdf_unescape(dir)
+                local full = join(lib, "steamapps", "common", vdf_unescape(dir))
                 if fs.exists(full) then return full end
             end
         end
@@ -375,7 +391,7 @@ local function pick_soundtrack_track(game_name)
     local target = norm_words(clean_game_name(game_name)):gsub("^%s+", ""):gsub("%s+$", "")
     if #target < 3 then return nil end
     for _, lib in ipairs(steam_libraries()) do
-        local entries = fs.list(lib .. "\\steamapps\\music")
+        local entries = fs.list(join(lib, "steamapps", "music"))
         if type(entries) == "table" then
             for _, e in ipairs(entries) do
                 if e.is_directory and norm_words(tostring(e.name)):find(target, 1, true) then
@@ -419,9 +435,9 @@ local function local_resolve(game_name, key)
     ext = ext:lower()
     pcall(fs.create_directories, AUDIO_DIR)
     for _, e in ipairs(AUDIO_EXTS) do
-        if e ~= ext then pcall(fs.remove, AUDIO_DIR .. "\\" .. key .. "." .. e) end
+        if e ~= ext then pcall(fs.remove, join(AUDIO_DIR, key .. "." .. e)) end
     end
-    local copied = fs.copy(picked.path, AUDIO_DIR .. "\\" .. key .. "." .. ext)
+    local copied = fs.copy(picked.path, join(AUDIO_DIR, key .. "." .. ext))
     if not copied then return nil, "local_copy_failed" end
     return { file = key .. "." .. ext, title = (tostring(picked.name):gsub("%.%w+$", "")) }
 end
@@ -594,7 +610,7 @@ function get_theme_audio(app_id, force_refresh, game_name)
         if not game_name or game_name == "" then return json.encode({ ok = false, error = "missing_game_name" }) end
         local key = tostring(app_id)
         local entry = cache[key]
-        if not force_refresh and entry and entry.file and fs and fs.exists and fs.exists(AUDIO_DIR .. "\\" .. entry.file) then
+        if not force_refresh and entry and entry.file and fs and fs.exists and fs.exists(join(AUDIO_DIR, entry.file)) then
             local url = LOOPBACK_BASE .. entry.file .. "?v=" .. tostring(entry.ts or 0)
             return json.encode({ ok = true, url = url, title = entry.title, cached = true })
         end
@@ -631,7 +647,7 @@ end
 function invalidate_audio(app_id)
     local key = tostring(app_id)
     if fs and fs.remove then
-        for _, e in ipairs(AUDIO_EXTS) do pcall(fs.remove, AUDIO_DIR .. "\\" .. key .. "." .. e) end
+        for _, e in ipairs(AUDIO_EXTS) do pcall(fs.remove, join(AUDIO_DIR, key .. "." .. e)) end
     end
     cache[key] = nil
     save_cache()
@@ -664,7 +680,7 @@ function get_cache_info()
         local count, bytes = 0, 0
         for _, entry in pairs(cache) do
             if entry and entry.file then
-                local path = AUDIO_DIR .. "\\" .. entry.file
+                local path = join(AUDIO_DIR, entry.file)
                 if fs and fs.exists and fs.exists(path) then
                     count = count + 1
                     bytes = bytes + file_size(path)
@@ -682,10 +698,10 @@ function clear_audio_cache()
         local removed = 0
         for key, entry in pairs(cache) do
             if entry and entry.file then
-                local path = AUDIO_DIR .. "\\" .. entry.file
+                local path = join(AUDIO_DIR, entry.file)
                 if fs and fs.exists and fs.exists(path) and pcall(fs.remove, path) then removed = removed + 1 end
             end
-            for _, e in ipairs(AUDIO_EXTS) do pcall(fs.remove, AUDIO_DIR .. "\\" .. tostring(key) .. "." .. e) end
+            for _, e in ipairs(AUDIO_EXTS) do pcall(fs.remove, join(AUDIO_DIR, tostring(key) .. "." .. e)) end
         end
         cache = {}
         save_cache()
