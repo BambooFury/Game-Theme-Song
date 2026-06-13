@@ -1,5 +1,30 @@
 # Changelog
 
+## [1.4.0](https://github.com/BambooFury/Game-Theme-Song/compare/v1.3.0...v1.4.0) (2026-06-13)
+
+
+### Features
+
+* **search-toast:** reroll controls with native arg-order fix ([9f7976b](https://github.com/BambooFury/Game-Theme-Song/commit/9f7976bd61cf6255cc661a28e128529a2a35af4f))
+* **settings:** manual song search toggle for classic/new modes ([0894639](https://github.com/BambooFury/Game-Theme-Song/commit/08946395cb702fa006d59c518e1df6c5a8bc07c8))
+
+
+### Bug Fixes
+
+* avoid audio click on first song change ([f667734](https://github.com/BambooFury/Game-Theme-Song/commit/f667734cf5d1440bc08f3273748c8e3c4168be5b))
+
+
+### Refactoring
+
+* drop dead code (get_icon_data_uri, single-shot set_custom_music) ([9e5e51e](https://github.com/BambooFury/Game-Theme-Song/commit/9e5e51eede95d2c3acd4685322c6308d72e5c510))
+* split frontend settings UI into core and settings modules ([82daa6c](https://github.com/BambooFury/Game-Theme-Song/commit/82daa6cfd6e3bf68561a47b607ef6161a436170e))
+* split frontend settings UI into core and settings modules ([639249c](https://github.com/BambooFury/Game-Theme-Song/commit/639249ccda9d0d5bffe20114cd37dbf95e736530))
+
+
+### Maintenance
+
+* **ui:** remove native title tooltips from buttons ([99d7ec3](https://github.com/BambooFury/Game-Theme-Song/commit/99d7ec341e91b79a9ef2bc862b7b23c21c9bf550))
+
 ## [1.3.0](https://github.com/BambooFury/Game-Theme-Song/compare/v1.2.1...v1.3.0) (2026-06-13)
 
 
