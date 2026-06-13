@@ -97,6 +97,42 @@
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
+.gts-set-val-edit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 1px;
+  padding: 2px 8px;
+}
+.gts-set-val-edit:focus-within {
+  border-color: rgba(103,193,245,0.55);
+}
+.gts-set-num {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 30px;
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: transparent;
+  color: #67c1f5;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  outline: none;
+}
+.gts-set-num::-webkit-inner-spin-button,
+.gts-set-num::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.gts-set-num-suffix {
+  color: #67c1f5;
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0.85;
+}
 
 .gts-set-slider {
   -webkit-appearance: none;

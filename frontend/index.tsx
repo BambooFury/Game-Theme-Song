@@ -424,11 +424,22 @@ interface SliderRowProps {
   min?: number;
   max?: number;
   step?: number;
+  editable?: boolean;
+  inputSuffix?: string;
   onChange: (value: number) => void;
 }
 
-const SliderRow: React.FC<SliderRowProps> = ({ icon, title, description, value, valueLabel, min = 0, max = 100, step = 1, onChange }) => {
+const SliderRow: React.FC<SliderRowProps> = ({ icon, title, description, value, valueLabel, min = 0, max = 100, step = 1, editable = false, inputSuffix = '', onChange }) => {
   const fill = ((value - min) / (max - min)) * 100;
+  const [text, setText] = useState(String(value));
+  useEffect(() => { setText(String(value)); }, [value]);
+  const commit = (raw: string) => {
+    const n = parseInt(raw, 10);
+    if (isNaN(n)) { setText(String(value)); return; }
+    const clamped = Math.max(min, Math.min(max, n));
+    setText(String(clamped));
+    if (clamped !== value) onChange(clamped);
+  };
   return (
     <div className={`gts-set-row gts-vert${value > min ? ' gts-on' : ''}`}>
       <div className="gts-set-head">
@@ -437,7 +448,24 @@ const SliderRow: React.FC<SliderRowProps> = ({ icon, title, description, value, 
           <div className="gts-set-title">{title}</div>
           <div className="gts-set-desc">{description}</div>
         </span>
-        <span className="gts-set-val">{valueLabel}</span>
+        {editable ? (
+          <span className="gts-set-val gts-set-val-edit">
+            <input
+              type="number"
+              className="gts-set-num"
+              min={min}
+              max={max}
+              step={step}
+              value={text}
+              onChange={(ev: React.ChangeEvent<HTMLInputElement>) => setText(ev.target.value)}
+              onBlur={(ev: React.FocusEvent<HTMLInputElement>) => commit(ev.target.value)}
+              onKeyDown={(ev: React.KeyboardEvent<HTMLInputElement>) => { if (ev.key === 'Enter') ev.currentTarget.blur(); }}
+            />
+            {inputSuffix ? <span className="gts-set-num-suffix">{inputSuffix}</span> : null}
+          </span>
+        ) : (
+          <span className="gts-set-val">{valueLabel}</span>
+        )}
       </div>
       <input
         type="range"
@@ -891,7 +919,9 @@ const SettingsContent: React.FC = () => {
       valueLabel={formatLimit(maxSec)}
       min={0}
       max={300}
-      step={15}
+      step={5}
+      editable
+      inputSuffix="s"
       onChange={onLimit}
     />
     <ToggleRow
