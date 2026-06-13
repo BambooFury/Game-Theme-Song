@@ -2,6 +2,7 @@ import { callable } from '@steambrew/client';
 import type { Primitive, NoArgs } from './types';
 
 export const getThemeAudio = callable<[{ app_id: number | string; game_name: string; force_refresh: boolean }], string>('get_theme_audio');
+export const rerollTheme = callable<[{ app_id: number | string; game_name: string; force_refresh: boolean; exclude: string }], string>('reroll_theme');
 export const invalidateAudio = callable<[{ app_id: number | string }], string>('invalidate_audio');
 export const getBackendSettings = callable<NoArgs, string>('get_settings');
 export const setBackendSetting = callable<[{ key: string; value: Primitive }], string>('set_setting');

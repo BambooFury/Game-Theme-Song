@@ -15,7 +15,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 16px;
+  padding: 8px 10px 8px 16px;
   background: rgba(24, 28, 34, 0.82);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
@@ -37,8 +37,67 @@
   display: flex;
   width: 18px;
   height: 18px;
+  flex: none;
 }
 
 #gts-search-toast .gts-search-toast-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+#gts-search-toast.gts-searching .gts-search-toast-icon svg {
   animation: gts-search-sweep 3.2s ease-in-out infinite;
+}
+
+#gts-search-toast .gts-search-toast-label {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#gts-search-toast .gts-search-toast-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 4px;
+}
+
+#gts-search-toast.gts-ready {
+  pointer-events: auto;
+}
+
+#gts-search-toast .gts-toast-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #b7c0ca;
+  cursor: pointer;
+  transition: background 0.18s ease, color 0.18s ease, opacity 0.18s ease;
+}
+
+#gts-search-toast .gts-toast-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+#gts-search-toast .gts-toast-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+#gts-search-toast .gts-toast-reject:not(:disabled):hover {
+  background: rgba(220, 76, 70, 0.16);
+  color: #e98179;
+}
+
+#gts-search-toast .gts-toast-accept:not(:disabled):hover {
+  background: rgba(86, 176, 102, 0.18);
+  color: #74d089;
 }

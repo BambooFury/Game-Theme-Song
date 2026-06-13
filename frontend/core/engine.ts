@@ -1,5 +1,5 @@
 import type { Settings, CacheInfo } from './types';
-import { getThemeAudio, invalidateAudio, getBackendSettings } from './api';
+import { getThemeAudio, rerollTheme, invalidateAudio, getBackendSettings } from './api';
 import { warn, reportError } from './log';
 
 const DEFAULTS: Settings = {
@@ -172,22 +172,108 @@ async function resolveGameName(appId: number): Promise<string | null> {
   return name;
 }
 
-let searchActive = false;
-let searchListeners: ((on: boolean) => void)[] = [];
+export type ToastMode = 'off' | 'searching' | 'ready';
+export interface ToastState { mode: ToastMode; title: string | null }
 
-function setSearching(on: boolean) {
-  if (searchActive === on) return;
-  searchActive = on;
-  for (const fn of searchListeners) fn(on);
+let toastMode: ToastMode = 'off';
+let toastTitle: string | null = null;
+let toastListeners: ((s: ToastState) => void)[] = [];
+
+function setToast(mode: ToastMode, title: string | null = toastTitle) {
+  toastMode = mode;
+  toastTitle = title;
+  const snapshot: ToastState = { mode, title };
+  for (const fn of toastListeners) fn(snapshot);
 }
 
-export function isSearching(): boolean {
-  return searchActive;
+export function getToast(): ToastState {
+  return { mode: toastMode, title: toastTitle };
 }
 
-export function subscribeSearching(fn: (on: boolean) => void): () => void {
-  searchListeners.push(fn);
-  return () => { searchListeners = searchListeners.filter((x) => x !== fn); };
+export function getToastMode(): ToastMode {
+  return toastMode;
+}
+
+export function subscribeToast(fn: (s: ToastState) => void): () => void {
+  toastListeners.push(fn);
+  return () => { toastListeners = toastListeners.filter((x) => x !== fn); };
+}
+
+let currentGameName: string | null = null;
+let currentTitle: string | null = null;
+let currentUrl: string | null = null;
+let rerollExclude: string[] = [];
+
+async function resolveAndPlay(
+  appId: number,
+  name: string,
+  mySeq: number,
+  getSeq: () => number,
+  exclude: string[],
+): Promise<{ ok: boolean; title: string | null; url: string | null; cached: boolean }> {
+  const rerolling = exclude.length > 0;
+  const excludeArg = JSON.stringify(exclude);
+  let resp: any;
+  try {
+    const raw = rerolling
+      ? await rerollTheme({ app_id: appId, game_name: name, force_refresh: true, exclude: excludeArg })
+      : await getThemeAudio({ app_id: appId, game_name: name, force_refresh: false });
+    resp = typeof raw === 'string' ? JSON.parse(raw) : raw;
+  } catch (e) {
+    warn('backend error', e);
+    return { ok: false, title: null, url: null, cached: false };
+  }
+  if (mySeq !== getSeq()) return { ok: false, title: null, url: null, cached: false };
+  if (!resp?.ok || !resp.url) {
+    warn('no audio for', name, resp?.error);
+    return { ok: false, title: null, url: null, cached: false };
+  }
+
+  const ok = await playUrl(resp.url, mySeq, getSeq);
+  if (ok || mySeq !== getSeq()) return { ok, title: resp.title ?? null, url: ok ? resp.url : null, cached: !!resp.cached };
+
+  await invalidateAudio({ app_id: appId });
+  const raw2 = rerolling
+    ? await rerollTheme({ app_id: appId, game_name: name, force_refresh: true, exclude: excludeArg })
+    : await getThemeAudio({ app_id: appId, game_name: name, force_refresh: true });
+  const r2 = typeof raw2 === 'string' ? JSON.parse(raw2) : raw2;
+  if (mySeq !== getSeq() || !r2?.ok || !r2.url) return { ok: false, title: null, url: null, cached: false };
+  const ok2 = await playUrl(r2.url, mySeq, getSeq);
+  return { ok: ok2, title: r2.title ?? null, url: ok2 ? r2.url : null, cached: false };
+}
+
+export async function rerollCurrent(): Promise<void> {
+  const appId = currentAppId;
+  const name = currentGameName;
+  if (appId == null || !name) return;
+  if (toastMode === 'searching') return;
+  if (currentTitle) rerollExclude = [...rerollExclude, currentTitle];
+  const mySeq = ++activeSeq;
+  const getSeq = () => activeSeq;
+  stopAudio(0.25);
+  setToast('searching');
+  try {
+    const { ok, title, url } = await resolveAndPlay(appId, name, mySeq, getSeq, rerollExclude);
+    if (mySeq !== activeSeq) return;
+    if (ok) {
+      currentTitle = title;
+      currentUrl = url;
+      setToast('ready', title);
+    } else {
+      if (currentUrl) await playUrl(currentUrl, mySeq, getSeq);
+      if (mySeq === activeSeq) setToast('ready', currentTitle);
+    }
+  } catch (e) {
+    warn('rerollCurrent failed', e);
+    if (mySeq === activeSeq) {
+      if (currentUrl) await playUrl(currentUrl, mySeq, getSeq);
+      setToast('ready', currentTitle);
+    }
+  }
+}
+
+export function acceptCurrent(): void {
+  setToast('off');
 }
 
 let libWindowOpen = false;
@@ -262,39 +348,34 @@ async function playForApp(appId: number) {
     currentAppId = appId;
     mySeq = ++activeSeq;
     const getSeq = () => activeSeq;
-    setSearching(true);
+    currentGameName = null;
+    currentTitle = null;
+    currentUrl = null;
+    rerollExclude = [];
     const name = await resolveGameName(appId);
     if (mySeq !== activeSeq) return;
     if (!name) { warn('no name for', appId); return; }
+    currentGameName = name;
 
-    let resp: any;
-    try {
-      const raw = await getThemeAudio({ app_id: appId, game_name: name, force_refresh: false });
-      resp = typeof raw === 'string' ? JSON.parse(raw) : raw;
-    } catch (e) {
-      warn('backend error', e);
-      return;
-    }
+    let searchingShown = false;
+    const searchingTimer = setTimeout(() => {
+      if (mySeq === activeSeq) { searchingShown = true; setToast('searching', null); }
+    }, 350);
 
+    const { ok, title, url, cached } = await resolveAndPlay(appId, name, mySeq, getSeq, []);
+    clearTimeout(searchingTimer);
     if (mySeq !== activeSeq) return;
-    if (!resp?.ok || !resp.url) {
-      warn('no audio for', name, resp?.error);
-      return;
+    if (ok) {
+      currentTitle = title;
+      currentUrl = url;
+      if (cached && !searchingShown) setToast('off');
+      else setToast('ready', title);
+    } else {
+      setToast('off');
     }
-
-    const ok = await playUrl(resp.url, mySeq, getSeq);
-    if (ok || mySeq !== activeSeq) return;
-
-    await invalidateAudio({ app_id: appId });
-    const raw2 = await getThemeAudio({ app_id: appId, game_name: name, force_refresh: true });
-    const r2 = typeof raw2 === 'string' ? JSON.parse(raw2) : raw2;
-    if (mySeq !== activeSeq || !r2?.ok) return;
-
-    if (r2.url) await playUrl(r2.url, mySeq, getSeq);
   } catch (e) {
     warn('playForApp crashed', e);
-  } finally {
-    if (mySeq === activeSeq) setSearching(false);
+    if (mySeq === activeSeq) setToast('off');
   }
 }
 
@@ -349,7 +430,7 @@ function pollOnce() {
     navDebounceTimer = null;
     const finalId = detectAppId();
     if (finalId === currentAppId) return;
-    if (finalId === null) { currentAppId = null; setSearching(false); }
+    if (finalId === null) { currentAppId = null; setToast('off'); }
     else void playForApp(finalId);
   }, NAV_DEBOUNCE_MS);
 }

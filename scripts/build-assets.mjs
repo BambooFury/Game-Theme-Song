@@ -43,8 +43,10 @@ ${iconEntries}
 writeFileSync(outPath, banner + '\n' + body, 'utf8');
 
 const settingsDir = join(root, 'frontend', 'settings');
-const toastCss  = readFileSync(join(toastDir, 'search-toast.css'), 'utf8');
-const toastIcon = readFileSync(join(toastDir, 'magnifier.svg'), 'utf8').trim();
+const toastCss   = readFileSync(join(toastDir, 'search-toast.css'), 'utf8');
+const toastIcon  = readFileSync(join(toastDir, 'magnifier.svg'), 'utf8').trim();
+const toastXIcon = readFileSync(join(toastDir, 'x.svg'), 'utf8').trim();
+const toastOkIcon = readFileSync(join(toastDir, 'check.svg'), 'utf8').trim();
 const settingsCss  = readFileSync(join(settingsDir, 'settings.css'), 'utf8');
 const repeatIcon   = readFileSync(join(settingsDir, 'repeat.svg'), 'utf8').trim();
 const volumeIcon   = readFileSync(join(settingsDir, 'volume.svg'), 'utf8').trim();
@@ -58,8 +60,10 @@ const frontendBanner =
 // Source: frontend/search-toast/*, frontend/settings/*
 `;
 const frontendBody =
-`export const SEARCH_TOAST_CSS  = ${asTsLiteral(toastCss)};
-export const SEARCH_TOAST_ICON = ${asTsLiteral(toastIcon)};
+`export const SEARCH_TOAST_CSS   = ${asTsLiteral(toastCss)};
+export const SEARCH_TOAST_ICON  = ${asTsLiteral(toastIcon)};
+export const SEARCH_TOAST_X     = ${asTsLiteral(toastXIcon)};
+export const SEARCH_TOAST_CHECK = ${asTsLiteral(toastOkIcon)};
 
 export const SETTINGS_CSS = ${asTsLiteral(settingsCss)};
 export const SETTINGS_ICONS = {
