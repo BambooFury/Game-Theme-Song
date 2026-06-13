@@ -37,7 +37,7 @@ const CacheRow = memo(function CacheRow({ item, busy, onDelete }: CacheRowProps)
         <div className="gts-cache-name">{item.name}</div>
         <div className="gts-cache-meta">{item.title ? `${item.title} · ` : ''}{(item.bytes / 1048576).toFixed(1)} MB</div>
       </div>
-      <button className="gts-lib-mini gts-danger" disabled={busy} title="Remove this track" onClick={() => onDelete(item)} dangerouslySetInnerHTML={{ __html: SETTINGS_ICONS.trash }} />
+      <button className="gts-lib-mini gts-danger" disabled={busy} onClick={() => onDelete(item)} dangerouslySetInnerHTML={{ __html: SETTINGS_ICONS.trash }} />
     </div>
   );
 });
