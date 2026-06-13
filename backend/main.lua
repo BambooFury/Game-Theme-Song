@@ -61,10 +61,53 @@ local cache = {}
 local settings = {}
 local custom = {}
 
-local function safe_decode(str)
+local MAX_JSON_BYTES = 8 * 1024 * 1024
+local MAX_JSON_DEPTH = 64
+
+local function json_safe_to_decode(str, max_depth)
+    if type(str) ~= "string" then return false end
+    local n = #str
+    if n == 0 or n > MAX_JSON_BYTES then return false end
+    local i = 1
+    while i <= n do
+        local c = str:byte(i)
+        if c == 32 or c == 9 or c == 10 or c == 13 then i = i + 1 else break end
+    end
+    if i > n then return false end
+    local first = str:byte(i)
+    if first ~= 123 and first ~= 91 then return false end
+    local depth, in_str = 0, false
+    while i <= n do
+        local c = str:byte(i)
+        if in_str then
+            if c == 92 then i = i + 1
+            elseif c == 34 then in_str = false end
+        elseif c == 34 then in_str = true
+        elseif c == 123 or c == 91 then
+            depth = depth + 1
+            if depth > max_depth then return false end
+        elseif c == 125 or c == 93 then
+            depth = depth - 1
+            if depth < 0 then return false end
+        end
+        i = i + 1
+    end
+    if in_str or depth ~= 0 then return false end
+    return true
+end
+
+local function safe_decode(str, tag)
     if not str or str == "" then return nil end
+    logger:info(string.format("json.decode[%s] len=%d head=%s", tostring(tag or "?"), #str, (str:sub(1, 80):gsub("%c", " "))))
+    if not json_safe_to_decode(str, MAX_JSON_DEPTH) then
+        logger:warn(string.format("json.decode[%s] rejected by guard len=%d", tostring(tag or "?"), #str))
+        return nil
+    end
     local ok, val = pcall(json.decode, str)
-    if not ok then return nil end
+    if not ok then
+        logger:warn(string.format("json.decode[%s] pcall error len=%d", tostring(tag or "?"), #str))
+        return nil
+    end
     return val
 end
 
@@ -92,9 +135,9 @@ local function merge_defaults(target, defaults)
 end
 
 local function load_state()
-    cache = safe_decode(read_file(CACHE_FILE)) or {}
-    custom = safe_decode(read_file(CUSTOM_FILE)) or {}
-    local loaded = safe_decode(read_file(CONFIG_FILE)) or {}
+    cache = safe_decode(read_file(CACHE_FILE), "cache_file") or {}
+    custom = safe_decode(read_file(CUSTOM_FILE), "custom_file") or {}
+    local loaded = safe_decode(read_file(CONFIG_FILE), "config_file") or {}
     if (loaded.config_version or 0) < CONFIG_VERSION then loaded.config_version = CONFIG_VERSION end
     settings = merge_defaults(loaded, DEFAULT_SETTINGS)
 end
@@ -290,7 +333,7 @@ end
 
 local function build_exclude(exclude)
     local set = {}
-    if type(exclude) == "string" and exclude ~= "" then exclude = safe_decode(exclude) end
+    if type(exclude) == "string" and exclude ~= "" then exclude = safe_decode(exclude, "exclude") end
     if type(exclude) == "table" then
         for _, title in ipairs(exclude) do
             if type(title) == "string" and title ~= "" then
@@ -625,7 +668,7 @@ local function sc_api(path_and_query)
     if not resp or resp.status ~= 200 or not resp.body then
         return nil, "sc_api_failed_" .. tostring(resp and resp.status)
     end
-    return safe_decode(resp.body), nil
+    return safe_decode(resp.body, "sc_api"), nil
 end
 
 local function sc_resolve(game_name, key, exclude_set, dl_base)
@@ -660,7 +703,7 @@ local function sc_resolve(game_name, key, exclude_set, dl_base)
             tried = tried + 1
             local sep = c.stream_api:find("?", 1, true) and "&" or "?"
             local resp = http.request(c.stream_api .. sep .. "client_id=" .. tostring(sc_client_id), { user_agent = SC_UA })
-            local meta = (resp and resp.status == 200 and resp.body) and safe_decode(resp.body) or nil
+            local meta = (resp and resp.status == 200 and resp.body) and safe_decode(resp.body, "sc_meta") or nil
             if meta and type(meta.url) == "string" then
                 local file, dl_err = download_file(dl_base, "mp3", meta.url, SC_UA)
                 if file then return { file = file, title = c.title }, nil end
@@ -816,7 +859,7 @@ function set_custom_music_chunk(app_id, chunk)
     return json.encode({ ok = true })
 end
 
-function set_custom_music_finish(app_id, ext, title_b64, name_b64)
+function set_custom_music_finish(app_id, ext, name_b64, title_b64)
     local ok, result = pcall(function()
         local key = tostring(app_id)
         local s = upload_sessions[key]
@@ -844,7 +887,7 @@ function clear_custom_music(app_id)
 end
 
 function get_settings()
-    local fresh = safe_decode(read_file(CONFIG_FILE))
+    local fresh = safe_decode(read_file(CONFIG_FILE), "config_reload")
     if type(fresh) == "table" then settings = merge_defaults(fresh, DEFAULT_SETTINGS) end
     return json.encode(settings)
 end

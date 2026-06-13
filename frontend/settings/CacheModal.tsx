@@ -47,6 +47,7 @@ const CacheModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const [busyId, setBusyId] = useState<number | null>(null);
   const [clearingAll, setClearingAll] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
 
   const broadcast = (list: CacheItem[]) => {
     setGlobalCacheInfo({ count: list.length, bytes: list.reduce((s, x) => s + x.bytes, 0) });
@@ -120,6 +121,12 @@ const CacheModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const count = items?.length ?? 0;
   const totalBytes = (items ?? []).reduce((s, x) => s + x.bytes, 0);
 
+  const visible = useMemo(() => {
+    const list = items ?? [];
+    const q = query.trim().toLowerCase();
+    return q ? list.filter((x) => x.name.toLowerCase().includes(q)) : list;
+  }, [items, query]);
+
   return (
     <>
       <style>{SETTINGS_CSS}</style>
@@ -137,12 +144,19 @@ const CacheModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             <button className="gts-lib-x" aria-label="Close" onClick={onClose}>✕</button>
           </div>
 
+          {count > 0 && (
+            <div className="gts-lib-search">
+              <input type="text" placeholder="Search downloaded music…" value={query} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setQuery(e.target.value)} />
+            </div>
+          )}
+
           {error && <div className="gts-lib-foot" style={{ color: '#ff8585' }}>{error}</div>}
 
           <div className="gts-cache-list">
             {items === null && <div className="gts-lib-loading">Loading…</div>}
             {items !== null && count === 0 && <div className="gts-lib-empty">Auto-downloaded themes will show up here.</div>}
-            {(items ?? []).map((item) => (
+            {items !== null && count > 0 && visible.length === 0 && <div className="gts-lib-empty">No tracks match “{query}”.</div>}
+            {visible.map((item) => (
               <CacheRow key={item.appid} item={item} busy={busyId === item.appid} onDelete={onDelete} />
             ))}
           </div>
