@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.0](https://github.com/BambooFury/Game-Theme-Song/compare/v1.1.1...v1.2.0) (2026-06-13)
+
+
+### Features
+
+* add custom game music with per-game audio library ([22c2044](https://github.com/BambooFury/Game-Theme-Song/commit/22c2044564c11561f8567c9efb02228e8469244d))
+* add custom game music with per-game audio library ([d513b59](https://github.com/BambooFury/Game-Theme-Song/commit/d513b59f3d25aeca43b1de46b65ab69aff193690))
+
 ## [1.1.1](https://github.com/BambooFury/Game-Theme-Song/compare/v1.1.0...v1.1.1) (2026-06-13)
 
 
