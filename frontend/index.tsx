@@ -1,5 +1,5 @@
 import { IconsModule, definePlugin, callable, routerHook } from '@steambrew/client';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef, useMemo, useCallback, memo } from 'react';
 import { SEARCH_TOAST_CSS, SEARCH_TOAST_ICON, SETTINGS_CSS, SETTINGS_ICONS } from './_assets.generated';
 
 type Primitive = string | number | boolean;
@@ -12,6 +12,11 @@ const setBackendSetting = callable<[{ key: string; value: Primitive }], string>(
 const logFrontend = callable<[{ message: string }], string>('log_frontend');
 const getCacheInfo = callable<NoArgs, string>('get_cache_info');
 const clearAudioCache = callable<NoArgs, string>('clear_audio_cache');
+const getCustomList = callable<NoArgs, string>('get_custom_list');
+const setCustomMusicBegin = callable<[{ app_id: number | string }], string>('set_custom_music_begin');
+const setCustomMusicChunk = callable<[{ app_id: number | string; chunk: string }], string>('set_custom_music_chunk');
+const setCustomMusicFinish = callable<[{ app_id: number | string; ext: string; title_b64: string; name_b64: string }], string>('set_custom_music_finish');
+const clearCustomMusic = callable<[{ app_id: number | string }], string>('clear_custom_music');
 
 interface Settings {
   enabled: boolean;
@@ -32,7 +37,6 @@ const DEFAULTS: Settings = {
   max_seconds: 0,
   stop_on_launch: true,
 };
-
 
 const state: { settings: Settings } = { settings: { ...DEFAULTS } };
 const warn = (...a: unknown[]) => console.warn('[GameThemeSong]', ...a);
@@ -198,6 +202,23 @@ function setSearching(on: boolean) {
   for (const fn of searchListeners) fn(on);
 }
 
+let libWindowOpen = false;
+let libWindowListeners: ((open: boolean) => void)[] = [];
+
+function setLibWindowOpen(open: boolean) {
+  if (libWindowOpen === open) return;
+  libWindowOpen = open;
+  for (const fn of libWindowListeners) fn(open);
+}
+
+let gCustomCount: number | null = null;
+let gCustomCountListeners: ((n: number | null) => void)[] = [];
+
+function setGlobalCustomCount(n: number | null) {
+  gCustomCount = n;
+  for (const fn of gCustomCountListeners) fn(n);
+}
+
 const SearchToast: React.FC = () => {
   const [on, setOn] = useState(searchActive);
 
@@ -284,7 +305,7 @@ function detectAppId(): number | null {
     }
   } catch {}
   try {
-    for (const value of [window.location.href, document.location?.href, document.body?.innerHTML?.match(/\/library\/app\/\d+/)?.[0]]) {
+    for (const value of [window.location.href, document.location?.href]) {
       const id = parseAppId(value);
       if (id) return id;
     }
@@ -338,6 +359,20 @@ function registerLaunchStop() {
     });
   } catch (e) {
     warn('failed to register launch listener', e);
+  }
+}
+
+async function reapplyForApp(appId: number) {
+  try {
+    if (currentAppId !== appId) return;
+    currentAppId = null;
+    lastDetectedAppId = null;
+    ++activeSeq;
+    stopAudio(0.25);
+    await new Promise((r) => setTimeout(r, 320));
+    await playForApp(appId);
+  } catch (e) {
+    warn('reapplyForApp failed', e);
   }
 }
 
@@ -425,6 +460,311 @@ const formatLimit = (sec: number) => {
   return m > 0 ? `${m}:${String(s).padStart(2, '0')}` : `${s}s`;
 };
 
+interface LibApp {
+  appid: number;
+  name: string;
+}
+type CustomMap = Record<string, { title?: string; name?: string }>;
+
+function decodeCustomItems(items: Record<string, { title_b64?: string; name_b64?: string }>): CustomMap {
+  const out: CustomMap = {};
+  for (const k in items) {
+    const it = items[k] || {};
+    out[k] = { title: base64ToUtf8(it.title_b64 ?? ''), name: base64ToUtf8(it.name_b64 ?? '') };
+  }
+  return out;
+}
+
+const ACCEPT_EXTS = '.mp3,.m4a,.aac,.ogg,.oga,.opus,.webm,.wav,.flac,audio/*';
+const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+const MAX_CARDS = 200;
+
+function getLibraryApps(): LibApp[] {
+  const out: LibApp[] = [];
+  const seen = new Set<number>();
+  const push = (ov: any) => {
+    if (!ov) return;
+    const appid = Number(ov.appid ?? ov.m_unAppID ?? ov.nAppID ?? ov.unAppID);
+    if (!appid || Number.isNaN(appid) || seen.has(appid)) return;
+    const name = ov.display_name ?? ov.appname ?? ov.strDisplayName ?? ov.name ?? `App ${appid}`;
+    seen.add(appid);
+    out.push({ appid, name: String(name) });
+  };
+  try {
+    const cs: any = (window as any).collectionStore;
+    const cols = [cs?.allGamesCollection, cs?.GetCollection?.('all-games'), cs?.GetCollection?.('local-install')];
+    for (const col of cols) {
+      const apps = col?.allApps ?? col?.visibleApps;
+      if (apps && typeof apps[Symbol.iterator] === 'function') for (const a of apps) push(a);
+    }
+  } catch (e) { warn('collectionStore read failed', e); }
+  if (out.length === 0) {
+    try {
+      const m: any = (window as any).appStore?.m_mapApps;
+      if (m && typeof m.values === 'function') for (const ov of m.values()) push(ov);
+    } catch (e) { warn('appStore read failed', e); }
+  }
+  out.sort((a, b) => a.name.localeCompare(b.name));
+  return out;
+}
+
+function coverCandidates(appid: number): string[] {
+  return [
+    `https://cdn.cloudflare.steamstatic.com/steam/apps/${appid}/library_600x900.jpg`,
+    `https://steamcdn-a.akamaihd.net/steam/apps/${appid}/library_600x900.jpg`,
+    `https://cdn.cloudflare.steamstatic.com/steam/apps/${appid}/header.jpg`,
+    `https://steamcdn-a.akamaihd.net/steam/apps/${appid}/header.jpg`,
+  ];
+}
+
+function arrayBufferToBase64(buf: ArrayBuffer): string {
+  const bytes = new Uint8Array(buf);
+  let binary = '';
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunk)));
+  }
+  return btoa(binary);
+}
+
+function readFileBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => resolve(arrayBufferToBase64(fr.result as ArrayBuffer));
+    fr.onerror = () => reject(fr.error ?? new Error('read_failed'));
+    fr.readAsArrayBuffer(file);
+  });
+}
+
+const UPLOAD_CHUNK = 128 * 1024;
+
+function utf8ToBase64(s: string): string {
+  const bytes = encodeURIComponent(s).replace(/%([0-9A-Fa-f]{2})/g, (_m, h) => String.fromCharCode(parseInt(h, 16)));
+  return btoa(bytes);
+}
+
+function base64ToUtf8(b64: string): string {
+  try {
+    const bin = atob(b64);
+    let pct = '';
+    for (let i = 0; i < bin.length; i++) pct += '%' + ('0' + bin.charCodeAt(i).toString(16)).slice(-2);
+    return decodeURIComponent(pct);
+  } catch {
+    return '';
+  }
+}
+
+async function uploadCustomMusic(appid: number | string, gameName: string, fileName: string, data: string): Promise<{ ok: boolean; error?: string }> {
+  const ext = (fileName.split('.').pop() ?? '').toLowerCase();
+  const begin = JSON.parse(await setCustomMusicBegin({ app_id: appid }));
+  if (!begin?.ok) return begin;
+  for (let i = 0; i < data.length; i += UPLOAD_CHUNK) {
+    const r = JSON.parse(await setCustomMusicChunk({ app_id: appid, chunk: data.slice(i, i + UPLOAD_CHUNK) }));
+    if (!r?.ok) return r;
+  }
+  return JSON.parse(await setCustomMusicFinish({ app_id: appid, ext, title_b64: utf8ToBase64(fileName), name_b64: utf8ToBase64(gameName) }));
+}
+
+interface GameCardProps {
+  key?: React.Key;
+  app: LibApp;
+  customTitle?: string;
+  busy: boolean;
+  onSet: (app: LibApp) => void;
+  onClear: (app: LibApp) => void;
+}
+
+const GameCard = memo(function GameCard({ app, customTitle, busy, onSet, onClear }: GameCardProps) {
+  const urls = useMemo(() => coverCandidates(app.appid), [app.appid]);
+  const [idx, setIdx] = useState(0);
+  const failed = idx >= urls.length;
+  const hasCustom = customTitle !== undefined;
+  return (
+    <div className={`gts-lib-card${hasCustom ? ' gts-has-custom' : ''}`}>
+      <div className="gts-lib-cover-wrap">
+        {failed
+          ? <div className="gts-lib-fallback">{app.name}</div>
+          : <img className="gts-lib-cover" src={urls[idx]} alt="" loading="lazy" decoding="async" onError={() => setIdx((i) => i + 1)} />}
+        {hasCustom && <span className="gts-lib-badge">♪ Custom</span>}
+      </div>
+      <div className="gts-lib-card-body">
+        <div className="gts-lib-card-name">{app.name}</div>
+        <div className="gts-lib-card-actions">
+          <button className="gts-lib-mini gts-primary" disabled={busy} onClick={() => onSet(app)}>
+            {busy ? 'Saving…' : hasCustom ? 'Replace' : 'Set music'}
+          </button>
+          {hasCustom && <button className="gts-lib-mini gts-danger" disabled={busy} onClick={() => onClear(app)} dangerouslySetInnerHTML={{ __html: SETTINGS_ICONS.trash }} />}
+        </div>
+      </div>
+    </div>
+  );
+});
+
+interface LibraryModalProps {
+  onClose: () => void;
+  onChanged: (map: CustomMap) => void;
+}
+
+const LibraryModal: React.FC<LibraryModalProps> = ({ onClose, onChanged }) => {
+  const [apps, setApps] = useState<LibApp[] | null>(null);
+  const [customMap, setCustomMap] = useState<CustomMap>({});
+  const [query, setQuery] = useState('');
+  const [busyId, setBusyId] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement | null>(null);
+  const pendingApp = useRef<LibApp | null>(null);
+
+  useEffect(() => {
+    setApps(getLibraryApps());
+    (async () => {
+      try {
+        const raw = await getCustomList();
+        const info = typeof raw === 'string' ? JSON.parse(raw) : raw;
+        if (info?.ok && info.items) setCustomMap(decodeCustomItems(info.items));
+      } catch (e) { warn('getCustomList failed', e); }
+    })();
+    const esc = (ev: KeyboardEvent) => { if (ev.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', esc);
+    return () => window.removeEventListener('keydown', esc);
+  }, [onClose]);
+
+  const customMapRef = useRef(customMap);
+  customMapRef.current = customMap;
+
+  const commit = (map: CustomMap) => { setCustomMap(map); onChanged(map); };
+
+  const onSet = useCallback((app: LibApp) => {
+    setError(null);
+    pendingApp.current = app;
+    fileRef.current?.click();
+  }, []);
+
+  const onFilePicked = async (ev: React.ChangeEvent<HTMLInputElement>) => {
+    const file = ev.target.files?.[0];
+    ev.target.value = '';
+    const app = pendingApp.current;
+    pendingApp.current = null;
+    if (!file || !app) return;
+    if (file.size > MAX_UPLOAD_BYTES) { setError(`"${file.name}" is too large (max 50 MB).`); return; }
+    setBusyId(app.appid);
+    setError(null);
+    try {
+      const data = await readFileBase64(file);
+      const resp = await uploadCustomMusic(app.appid, app.name, file.name, data);
+      if (!resp?.ok) { setError(`Couldn't set music: ${resp?.error ?? 'unknown error'}.`); return; }
+      commit({ ...customMap, [String(app.appid)]: { title: file.name.replace(/\.[^.]+$/, ''), name: app.name } });
+      void reapplyForApp(app.appid);
+    } catch (e) {
+      warn('set custom failed', e);
+      const detail = e instanceof Error && e.message ? `: ${e.message}` : '';
+      setError(`Something went wrong while saving the file${detail}.`);
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const onClear = useCallback(async (app: LibApp) => {
+    setBusyId(app.appid);
+    setError(null);
+    try {
+      await clearCustomMusic({ app_id: app.appid });
+      const next = { ...customMapRef.current };
+      delete next[String(app.appid)];
+      setCustomMap(next);
+      onChanged(next);
+      void reapplyForApp(app.appid);
+    } catch (e) {
+      warn('clear custom failed', e);
+      setError('Could not remove the custom track.');
+    } finally {
+      setBusyId(null);
+    }
+  }, [onChanged]);
+
+  const visible = useMemo(() => {
+    if (!apps) return [];
+    const q = query.trim().toLowerCase();
+    const filtered = q ? apps.filter((a) => a.name.toLowerCase().includes(q)) : apps;
+    return [...filtered].sort((a, b) => {
+      const ca = customMap[String(a.appid)] ? 0 : 1;
+      const cb = customMap[String(b.appid)] ? 0 : 1;
+      return ca - cb || a.name.localeCompare(b.name);
+    });
+  }, [apps, query, customMap]);
+
+  const customCount = Object.keys(customMap).length;
+  const shown = visible.slice(0, MAX_CARDS);
+
+  const tree = (
+    <>
+      <style>{SETTINGS_CSS}</style>
+      <div className="gts-lib-dim" onMouseDown={(e: React.MouseEvent) => { if (e.target === e.currentTarget) onClose(); }}>
+        <div className="gts-lib-dlg" role="dialog" aria-modal="true">
+          <div className="gts-lib-head">
+            <span className="gts-lib-head-ic" dangerouslySetInnerHTML={{ __html: SETTINGS_ICONS.library }} />
+            <span className="gts-lib-head-text">
+              <div className="gts-lib-title">Custom game music</div>
+              <div className="gts-lib-sub">
+                {customCount > 0 ? `${customCount} ${customCount === 1 ? 'game uses' : 'games use'} your own track` : 'Pick your own theme for any game — it always plays before the auto search.'}
+              </div>
+            </span>
+            <button className="gts-lib-x" aria-label="Close" onClick={onClose}>✕</button>
+          </div>
+
+          <div className="gts-lib-search">
+            <input type="text" placeholder="Search your library…" value={query} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setQuery(e.target.value)} />
+          </div>
+
+          {error && <div className="gts-lib-foot" style={{ color: '#ff8585' }}>{error}</div>}
+
+          <div className="gts-lib-grid">
+            {apps === null && <div className="gts-lib-loading">Loading your library…</div>}
+            {apps !== null && shown.length === 0 && <div className="gts-lib-empty">No games match “{query}”.</div>}
+            {shown.map((app) => (
+              <GameCard
+                key={app.appid}
+                app={app}
+                customTitle={customMap[String(app.appid)]?.title}
+                busy={busyId === app.appid}
+                onSet={onSet}
+                onClear={onClear}
+              />
+            ))}
+          </div>
+
+          <div className="gts-lib-foot">
+            {visible.length > MAX_CARDS
+              ? <>Showing first <b>{MAX_CARDS}</b> of {visible.length} — use search to narrow down.</>
+              : <>Supported formats: <b>MP3, M4A, AAC, OGG, OPUS, WAV, FLAC</b> — up to <b>50 MB</b> per file.</>}
+          </div>
+        </div>
+      </div>
+      <input ref={fileRef} type="file" accept={ACCEPT_EXTS} style={{ display: 'none' }} onChange={onFilePicked} />
+    </>
+  );
+
+  return tree;
+};
+
+const LibraryWindow: React.FC = () => {
+  const [open, setOpen] = useState(libWindowOpen);
+
+  useEffect(() => {
+    const fn = (v: boolean) => setOpen(v);
+    libWindowListeners.push(fn);
+    return () => { libWindowListeners = libWindowListeners.filter((x) => x !== fn); };
+  }, []);
+
+  if (!open) return null;
+
+  return (
+    <LibraryModal
+      onClose={() => setLibWindowOpen(false)}
+      onChanged={(map) => setGlobalCustomCount(Object.keys(map).length)}
+    />
+  );
+};
+
 const SettingsContent: React.FC = () => {
   const [percent, setPercent] = useState(Math.round(state.settings.volume * 100));
   const [loop, setLoop] = useState(state.settings.loop);
@@ -433,6 +773,21 @@ const SettingsContent: React.FC = () => {
   const [cacheCount, setCacheCount] = useState<number | null>(null);
   const [cacheBytes, setCacheBytes] = useState(0);
   const [clearing, setClearing] = useState(false);
+  const [customCount, setCustomCount] = useState<number | null>(gCustomCount);
+  useEffect(() => {
+    const fn = (n: number | null) => setCustomCount(n);
+    gCustomCountListeners.push(fn);
+    return () => { gCustomCountListeners = gCustomCountListeners.filter((x) => x !== fn); };
+  }, []);
+  const refreshCustomCount = async () => {
+    try {
+      const raw = await getCustomList();
+      const info = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      if (info?.ok) setGlobalCustomCount(Object.keys(info.items ?? {}).length);
+    } catch (e) {
+      warn('failed to load custom list', e);
+    }
+  };
   const refreshCacheInfo = async () => {
     try {
       const raw = await getCacheInfo();
@@ -447,6 +802,7 @@ const SettingsContent: React.FC = () => {
   };
   useEffect(() => {
     void refreshCacheInfo();
+    void refreshCustomCount();
     (async () => {
       try {
         const raw = await getBackendSettings();
@@ -506,6 +862,17 @@ const SettingsContent: React.FC = () => {
   return (
     <>
     <style>{SETTINGS_CSS}</style>
+    <ButtonRow
+      icon={SETTINGS_ICONS.library}
+      title="Custom game music"
+      description={customCount === null
+        ? 'Choose your own theme for any game in your library.'
+        : customCount === 0
+          ? 'Pick your own theme for any game — it plays before the auto search.'
+          : `${customCount} ${customCount === 1 ? 'game uses' : 'games use'} your own track · plays first.`}
+      buttonLabel="Open"
+      onClick={() => setLibWindowOpen(true)}
+    />
     <SliderRow
       icon={SETTINGS_ICONS.volume}
       title="Music volume"
@@ -556,6 +923,7 @@ const SettingsContent: React.FC = () => {
 export default definePlugin(() => {
   void loadSettingsOnce();
   routerHook.addGlobalComponent('GTSSearchToast', SearchToast);
+  routerHook.addGlobalComponent('GTSLibraryWindow', LibraryWindow);
   startPolling();
   registerLaunchStop();
   return {
@@ -564,6 +932,7 @@ export default definePlugin(() => {
     content: <SettingsContent />,
     onDismount() {
       routerHook.removeGlobalComponent('GTSSearchToast');
+      routerHook.removeGlobalComponent('GTSLibraryWindow');
       launchHook?.unregister?.();
     },
   };

@@ -32,6 +32,7 @@ end
 local PLUGIN_DIR = norm_path(resolve_plugin_dir())
 local CACHE_FILE = join(PLUGIN_DIR, "cache.json")
 local CONFIG_FILE = join(PLUGIN_DIR, "settings.json")
+local CUSTOM_FILE = join(PLUGIN_DIR, "custom.json")
 local ICON_DIR = join(PLUGIN_DIR, "icons")
 local AUDIO_DIR = join(norm_path(millennium.steam_path()), "steamui", "game_theme_song")
 local LOOPBACK_BASE = "https://steamloopback.host/game_theme_song/"
@@ -58,6 +59,7 @@ local DEFAULT_SETTINGS = {
 
 local cache = {}
 local settings = {}
+local custom = {}
 
 local function safe_decode(str)
     if not str or str == "" then return nil end
@@ -91,6 +93,7 @@ end
 
 local function load_state()
     cache = safe_decode(read_file(CACHE_FILE)) or {}
+    custom = safe_decode(read_file(CUSTOM_FILE)) or {}
     local loaded = safe_decode(read_file(CONFIG_FILE)) or {}
     if (loaded.config_version or 0) < CONFIG_VERSION then loaded.config_version = CONFIG_VERSION end
     settings = merge_defaults(loaded, DEFAULT_SETTINGS)
@@ -102,6 +105,10 @@ end
 
 local function save_settings()
     write_file(CONFIG_FILE, json.encode(settings))
+end
+
+local function save_custom()
+    write_file(CUSTOM_FILE, json.encode(custom))
 end
 
 local function cleanup_legacy_worker()
@@ -140,6 +147,36 @@ local function base64_encode(input)
         out_i = out_i + 1
     end
     return table.concat(out)
+end
+
+local b64lookup = {}
+for i = 1, #b64chars do b64lookup[b64chars:sub(i, i)] = i - 1 end
+
+local function base64_decode(data)
+    data = tostring(data or "")
+    local prefix = data:match("^data:[^,]*,")
+    if prefix then data = data:sub(#prefix + 1) end
+    local parts, out, n = {}, {}, 0
+    local acc, accbits = 0, 0
+    for i = 1, #data do
+        local v = b64lookup[data:sub(i, i)]
+        if v then
+            acc = acc * 64 + v
+            accbits = accbits + 6
+            if accbits >= 8 then
+                accbits = accbits - 8
+                n = n + 1
+                out[n] = string.char(math.floor(acc / (2 ^ accbits)) % 256)
+                acc = acc % (2 ^ accbits)
+                if n >= 8192 then
+                    parts[#parts + 1] = table.concat(out, "", 1, n)
+                    out, n = {}, 0
+                end
+            end
+        end
+    end
+    if n > 0 then parts[#parts + 1] = table.concat(out, "", 1, n) end
+    return table.concat(parts)
 end
 
 function get_icon_data_uri(name)
@@ -609,6 +646,11 @@ function get_theme_audio(app_id, force_refresh, game_name)
     local ok, result = pcall(function()
         if not game_name or game_name == "" then return json.encode({ ok = false, error = "missing_game_name" }) end
         local key = tostring(app_id)
+        local cust = custom[key]
+        if cust and cust.file and fs and fs.exists and fs.exists(join(AUDIO_DIR, cust.file)) then
+            local url = LOOPBACK_BASE .. cust.file .. "?v=" .. tostring(cust.ts or 0)
+            return json.encode({ ok = true, url = url, title = cust.title, cached = true, custom = true })
+        end
         local entry = cache[key]
         if not force_refresh and entry and entry.file and fs and fs.exists and fs.exists(join(AUDIO_DIR, entry.file)) then
             local url = LOOPBACK_BASE .. entry.file .. "?v=" .. tostring(entry.ts or 0)
@@ -652,6 +694,113 @@ function invalidate_audio(app_id)
     cache[key] = nil
     save_cache()
     return json.encode({ ok = true })
+end
+
+local CUSTOM_EXTS = {
+    mp3 = "mp3", m4a = "m4a", mp4 = "m4a", aac = "m4a",
+    ogg = "ogg", oga = "ogg", opus = "ogg", webm = "webm",
+    wav = "wav", flac = "flac",
+}
+
+local function custom_ext(filename)
+    local ext = tostring(filename or ""):match("%.([%w]+)$")
+    if not ext then return nil end
+    return CUSTOM_EXTS[ext:lower()]
+end
+
+function get_custom_list()
+    local ok, result = pcall(function()
+        local items = {}
+        for key, entry in pairs(custom) do
+            if entry and entry.file and fs and fs.exists and fs.exists(join(AUDIO_DIR, entry.file)) then
+                items[tostring(key)] = { title_b64 = base64_encode(tostring(entry.title or "")), name_b64 = base64_encode(tostring(entry.name or "")) }
+            end
+        end
+        return json.encode({ ok = true, items = items })
+    end)
+    if not ok then logger:warn("get_custom_list crashed: " .. tostring(result)); return json.encode({ ok = false, error = "internal_error" }) end
+    return result
+end
+
+local upload_sessions = {}
+
+local function store_custom(app_id, game_name, filename, title, data, ext_hint, title_b64, name_b64)
+    if not (fs and fs.create_directories) then return json.encode({ ok = false, error = "fs_unsupported" }) end
+    local key = tostring(app_id)
+    if key == "" or key == "nil" then return json.encode({ ok = false, error = "missing_app_id" }) end
+    local ext
+    if ext_hint and tostring(ext_hint) ~= "" then ext = CUSTOM_EXTS[tostring(ext_hint):lower()] end
+    if not ext then ext = custom_ext(filename) end
+    if not ext then return json.encode({ ok = false, error = "unsupported_format" }) end
+    local resolved_title
+    if title_b64 and tostring(title_b64) ~= "" then local t = base64_decode(title_b64); if t and t ~= "" then resolved_title = t end end
+    local resolved_name
+    if name_b64 and tostring(name_b64) ~= "" then local n = base64_decode(name_b64); if n and n ~= "" then resolved_name = n end end
+    local bytes = base64_decode(data)
+    if #bytes < 1024 then return json.encode({ ok = false, error = "file_too_small" }) end
+    if #bytes > 50 * 1024 * 1024 then return json.encode({ ok = false, error = "file_too_large" }) end
+    pcall(fs.create_directories, AUDIO_DIR)
+    local fname = "custom_" .. key .. "." .. ext
+    for e in pairs(CUSTOM_EXTS) do pcall(fs.remove, join(AUDIO_DIR, "custom_" .. key .. "." .. e)) end
+    if not write_file(join(AUDIO_DIR, fname), bytes) then return json.encode({ ok = false, error = "write_failed" }) end
+    local clean_title = tostring(resolved_title or ""):gsub("%.[%w]+$", "")
+    if clean_title == "" then clean_title = "Custom track" end
+    local ts = os.time()
+    custom[key] = { file = fname, title = clean_title, name = resolved_name or "", ts = ts }
+    save_custom()
+    local url = LOOPBACK_BASE .. fname .. "?v=" .. tostring(ts)
+    return json.encode({ ok = true, url = url })
+end
+
+function set_custom_music(app_id, game_name, filename, title, data)
+    local ok, result = pcall(store_custom, app_id, game_name, filename, title, data)
+    if not ok then logger:warn("set_custom_music crashed: " .. tostring(result)); return json.encode({ ok = false, error = "internal_error" }) end
+    return result
+end
+
+function set_custom_music_begin(app_id)
+    local key = tostring(app_id)
+    if key == "" or key == "nil" then return json.encode({ ok = false, error = "missing_app_id" }) end
+    upload_sessions[key] = { parts = {}, bytes = 0 }
+    return json.encode({ ok = true })
+end
+
+function set_custom_music_chunk(app_id, chunk)
+    local key = tostring(app_id)
+    local s = upload_sessions[key]
+    if not s then return json.encode({ ok = false, error = "no_session" }) end
+    local part = tostring(chunk or "")
+    s.bytes = s.bytes + #part
+    if s.bytes > 80 * 1024 * 1024 then upload_sessions[key] = nil; return json.encode({ ok = false, error = "file_too_large" }) end
+    s.parts[#s.parts + 1] = part
+    return json.encode({ ok = true })
+end
+
+function set_custom_music_finish(app_id, ext, title_b64, name_b64)
+    local ok, result = pcall(function()
+        local key = tostring(app_id)
+        local s = upload_sessions[key]
+        if not s then return json.encode({ ok = false, error = "no_session" }) end
+        local data = table.concat(s.parts)
+        upload_sessions[key] = nil
+        return store_custom(app_id, nil, nil, nil, data, ext, title_b64, name_b64)
+    end)
+    if not ok then logger:warn("set_custom_music_finish crashed: " .. tostring(result)); return json.encode({ ok = false, error = "internal_error" }) end
+    return result
+end
+
+function clear_custom_music(app_id)
+    local ok, result = pcall(function()
+        local key = tostring(app_id)
+        if fs and fs.remove then
+            for e in pairs(CUSTOM_EXTS) do pcall(fs.remove, join(AUDIO_DIR, "custom_" .. key .. "." .. e)) end
+        end
+        custom[key] = nil
+        save_custom()
+        return json.encode({ ok = true })
+    end)
+    if not ok then logger:warn("clear_custom_music crashed: " .. tostring(result)); return json.encode({ ok = false, error = "internal_error" }) end
+    return result
 end
 
 function get_settings()
@@ -725,6 +874,7 @@ end
 local function on_unload()
     save_cache()
     save_settings()
+    save_custom()
 end
 
 return { on_load = on_load, on_unload = on_unload }
