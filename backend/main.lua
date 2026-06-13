@@ -54,6 +54,7 @@ local DEFAULT_SETTINGS = {
     loop = true,
     max_seconds = 0,
     stop_on_launch = true,
+    manual_search = true,
 }
 
 local cache = {}

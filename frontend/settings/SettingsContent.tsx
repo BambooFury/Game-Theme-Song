@@ -11,6 +11,7 @@ export const SettingsContent: React.FC = () => {
   const [loop, setLoop] = useState(state.settings.loop);
   const [maxSec, setMaxSec] = useState(state.settings.max_seconds);
   const [stopOnLaunch, setStopOnLaunch] = useState(state.settings.stop_on_launch);
+  const [manualSearch, setManualSearch] = useState(state.settings.manual_search);
   const [cacheCount, setCacheCount] = useState<number | null>(null);
   const [cacheBytes, setCacheBytes] = useState(0);
   const [customCount, setCustomCount] = useState<number | null>(getCustomCount());
@@ -50,6 +51,7 @@ export const SettingsContent: React.FC = () => {
           setLoop(state.settings.loop);
           setMaxSec(state.settings.max_seconds);
           setStopOnLaunch(state.settings.stop_on_launch);
+          setManualSearch(state.settings.manual_search);
           const a = getAudioEl();
           if (a) a.volume = state.settings.volume;
         }
@@ -83,6 +85,11 @@ export const SettingsContent: React.FC = () => {
     setStopOnLaunch(checked);
     state.settings.stop_on_launch = checked;
     void setBackendSetting({ key: 'stop_on_launch', value: checked }).catch(e => warn('save stop_on_launch failed', e));
+  };
+  const onManualSearch = (checked: boolean) => {
+    setManualSearch(checked);
+    state.settings.manual_search = checked;
+    void setBackendSetting({ key: 'manual_search', value: checked }).catch(e => warn('save manual_search failed', e));
   };
   return (
     <>
@@ -127,6 +134,15 @@ export const SettingsContent: React.FC = () => {
       description={loop ? 'The theme song repeats while you stay on the game page.' : 'The theme song plays once and stops.'}
       checked={loop}
       onChange={onLoop}
+    />
+    <ToggleRow
+      icon={SETTINGS_ICONS.search}
+      title="Manual song search"
+      description={manualSearch
+        ? 'When a theme is found, use the ✕ / ✓ buttons to pick a different song.'
+        : 'Classic mode — just play the first theme found, no buttons to switch.'}
+      checked={manualSearch}
+      onChange={onManualSearch}
     />
     <ToggleRow
       icon={SETTINGS_ICONS.gamepad}

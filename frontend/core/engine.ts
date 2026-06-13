@@ -10,6 +10,7 @@ const DEFAULTS: Settings = {
   loop: true,
   max_seconds: 0,
   stop_on_launch: true,
+  manual_search: true,
 };
 
 export const state: { settings: Settings } = { settings: { ...DEFAULTS } };
@@ -246,6 +247,7 @@ export async function rerollCurrent(): Promise<void> {
   const appId = currentAppId;
   const name = currentGameName;
   if (appId == null || !name) return;
+  if (!state.settings.manual_search) return;
   if (toastMode === 'searching') return;
   if (currentTitle) rerollExclude = [...rerollExclude, currentTitle];
   const mySeq = ++activeSeq;
@@ -368,7 +370,8 @@ async function playForApp(appId: number) {
     if (ok) {
       currentTitle = title;
       currentUrl = url;
-      if (cached && !searchingShown) setToast('off');
+      if (!state.settings.manual_search) setToast('off');
+      else if (cached && !searchingShown) setToast('off');
       else setToast('ready', title);
     } else {
       setToast('off');

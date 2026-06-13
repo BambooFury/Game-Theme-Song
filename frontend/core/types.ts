@@ -9,6 +9,7 @@ export interface Settings {
   loop: boolean;
   max_seconds: number;
   stop_on_launch: boolean;
+  manual_search: boolean;
 }
 
 export interface CacheInfo {
