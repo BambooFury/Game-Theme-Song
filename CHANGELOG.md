@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.4.3](https://github.com/BambooFury/Game-Theme-Song/compare/v1.4.2...v1.4.3) (2026-06-14)
+
+
+### Bug Fixes
+
+* sanitize invalid UTF-8 before json.decode to prevent crash ([baf639c](https://github.com/BambooFury/Game-Theme-Song/commit/baf639c9719e3cb4f92c8aa7fcac4f9fbbb52760))
+* sanitize invalid UTF-8 before json.decode to prevent crash ([fb31bb8](https://github.com/BambooFury/Game-Theme-Song/commit/fb31bb8c63a11139838429b3db01040d8a2087b1))
+
 ## [1.4.2](https://github.com/BambooFury/Game-Theme-Song/compare/v1.4.1...v1.4.2) (2026-06-13)
 
 
