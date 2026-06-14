@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.4.5](https://github.com/BambooFury/Game-Theme-Song/compare/v1.4.4...v1.4.5) (2026-06-14)
+
+
+### Bug Fixes
+
+* harden native boundaries and guard reentrancy to stop VM crash ([c32b4ac](https://github.com/BambooFury/Game-Theme-Song/commit/c32b4acc11c8b9ba8a8d35585b4fd6cd9523372a))
+* harden native boundaries and guard reentrancy to stop VM crash ([44ccda8](https://github.com/BambooFury/Game-Theme-Song/commit/44ccda82abeb0a155f16fc74a3f51529f9635b35))
+
 ## [1.4.4](https://github.com/BambooFury/Game-Theme-Song/compare/v1.4.3...v1.4.4) (2026-06-14)
 
 
