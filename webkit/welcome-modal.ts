@@ -4,7 +4,7 @@ import {
   WELCOME_HTML_TEMPLATE,
 } from './_assets.generated';
 
-const SEEN_FLAG = 'gts_welcomed_v2';
+const SEEN_FLAG = 'gts_welcomed_v3';
 
 function alreadySeen(): boolean {
   try { return localStorage.getItem(SEEN_FLAG) === '1'; }
@@ -58,6 +58,7 @@ function build() {
     .replace(/\{\{ICON_SPARKLES\}\}/g, ico.sparkles)
     .replace(/\{\{ICON_ZAP\}\}/g,      ico.zap)
     .replace(/\{\{ICON_SETTINGS\}\}/g, ico.settings)
+    .replace(/\{\{ICON_LIBRARY\}\}/g,  ico.library)
     .replace(/\{\{ICON_PLAY\}\}/g,     ico.play);
 
   dim.appendChild(dlg);
