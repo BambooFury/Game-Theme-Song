@@ -33,6 +33,8 @@ local PLUGIN_DIR = norm_path(resolve_plugin_dir())
 local CACHE_FILE = join(PLUGIN_DIR, "cache.json")
 local CONFIG_FILE = join(PLUGIN_DIR, "settings.json")
 local CUSTOM_FILE = join(PLUGIN_DIR, "custom.json")
+local RESOLVE_MARKER = join(PLUGIN_DIR, "resolve.lock")
+local BOOT_MARKER = join(PLUGIN_DIR, "boot.lock")
 local AUDIO_DIR = join(norm_path(millennium.steam_path()), "steamui", "game_theme_song")
 local LOOPBACK_BASE = "https://steamloopback.host/game_theme_song/"
 local QUEUE_DIR = join(PLUGIN_DIR, "queue")
@@ -173,6 +175,103 @@ local function safe_encode(val, tag)
     return res
 end
 
+local gts_unpack = table.unpack or unpack
+
+local function deep_safe(v, depth)
+    local t = type(v)
+    if t == "string" then
+        return (to_valid_utf8(v):gsub("%z", ""))
+    elseif t == "number" then
+        if v ~= v or v == math.huge or v == -math.huge then return 0 end
+        return v
+    elseif t == "boolean" then
+        return v
+    elseif t == "table" then
+        if depth >= MAX_JSON_DEPTH then return nil end
+        local out = {}
+        for k, val in pairs(v) do
+            local kt = type(k)
+            local nk = nil
+            if kt == "string" then nk = (to_valid_utf8(k):gsub("%z", ""))
+            elseif kt == "number" then if k == k and k ~= math.huge and k ~= -math.huge then nk = k end end
+            if nk ~= nil then
+                local nv = deep_safe(val, depth + 1)
+                if nv ~= nil then out[nk] = nv end
+            end
+        end
+        return out
+    end
+    return nil
+end
+
+local function native_string(s, max)
+    s = to_valid_utf8(tostring(s)):gsub("%z", "")
+    if max and #s > max then s = s:sub(1, max) end
+    return s
+end
+
+local function native_url(u)
+    u = to_valid_utf8(tostring(u)):gsub("[%z\1-\31\127]", "")
+    if #u > 4096 then u = u:sub(1, 4096) end
+    return u
+end
+
+do
+    local _encode = json.encode
+    json.encode = function(v) return _encode(deep_safe(v, 0)) end
+    local _decode = json.decode
+    json.decode = function(s)
+        if type(s) == "string" then s = presanitize_json(s) end
+        return _decode(s)
+    end
+end
+
+if http then
+    if type(http.request) == "function" then
+        local _r = http.request
+        http.request = function(url, opts) return _r(native_url(url), opts) end
+    end
+    if type(http.download) == "function" then
+        local _d = http.download
+        http.download = function(url, path, opts) return _d(native_url(url), native_string(path), opts) end
+    end
+end
+
+if fs then
+    local function wrap_path1(name)
+        if type(fs[name]) == "function" then
+            local orig = fs[name]
+            fs[name] = function(p, ...) return orig(native_string(p), ...) end
+        end
+    end
+    wrap_path1("list"); wrap_path1("exists"); wrap_path1("remove"); wrap_path1("create_directories")
+    if type(fs.copy) == "function" then
+        local _c = fs.copy
+        fs.copy = function(a, b, ...) return _c(native_string(a), native_string(b), ...) end
+    end
+end
+
+if type(logger) == "table" then
+    for _, m in ipairs({ "info", "warn", "error", "debug", "trace", "log" }) do
+        if type(logger[m]) == "function" then
+            local orig = logger[m]
+            logger[m] = function(...)
+                local n = select("#", ...)
+                local args = { ... }
+                for i = 1, n do
+                    if type(args[i]) == "string" then args[i] = native_string(args[i], 4000) end
+                end
+                return orig(gts_unpack(args, 1, n))
+            end
+        end
+    end
+end
+
+if utils and type(utils.url_encode) == "function" then
+    local _u = utils.url_encode
+    utils.url_encode = function(t) return _u(native_string(t)) end
+end
+
 local function read_file(path)
     local f = io.open(path, "rb")
     if not f then return nil end
@@ -197,22 +296,31 @@ local function merge_defaults(target, defaults)
 end
 
 local function scrub_state(tbl)
-    if type(tbl) ~= "table" then return tbl end
-    for _, entry in pairs(tbl) do
-        if type(entry) == "table" then
-            if type(entry.title) == "string" then entry.title = to_valid_utf8(entry.title) end
-            if type(entry.name) == "string" then entry.name = to_valid_utf8(entry.name) end
-        end
-    end
-    return tbl
+    if type(tbl) ~= "table" then return {} end
+    return deep_safe(tbl, 0) or {}
 end
 
 local function load_state()
-    cache = scrub_state(safe_decode(read_file(CACHE_FILE), "cache_file") or {})
-    custom = scrub_state(safe_decode(read_file(CUSTOM_FILE), "custom_file") or {})
-    local loaded = safe_decode(read_file(CONFIG_FILE), "config_file") or {}
-    if (loaded.config_version or 0) < CONFIG_VERSION then loaded.config_version = CONFIG_VERSION end
-    settings = merge_defaults(loaded, DEFAULT_SETTINGS)
+    local ok_c = pcall(function()
+        cache = scrub_state(safe_decode(read_file(CACHE_FILE), "cache_file") or {})
+    end)
+    if not ok_c or type(cache) ~= "table" then cache = {}; pcall(os.remove, CACHE_FILE) end
+
+    local ok_u = pcall(function()
+        custom = scrub_state(safe_decode(read_file(CUSTOM_FILE), "custom_file") or {})
+    end)
+    if not ok_u or type(custom) ~= "table" then custom = {}; pcall(os.remove, CUSTOM_FILE) end
+
+    local ok_s = pcall(function()
+        local loaded = safe_decode(read_file(CONFIG_FILE), "config_file") or {}
+        if type(loaded) ~= "table" then loaded = {} end
+        if (loaded.config_version or 0) < CONFIG_VERSION then loaded.config_version = CONFIG_VERSION end
+        settings = merge_defaults(loaded, DEFAULT_SETTINGS)
+    end)
+    if not ok_s or type(settings) ~= "table" then
+        settings = merge_defaults({}, DEFAULT_SETTINGS)
+        pcall(os.remove, CONFIG_FILE)
+    end
 end
 
 local function save_cache()
@@ -789,6 +897,17 @@ local function sc_resolve(game_name, key, exclude_set, dl_base)
 end
 
 local function resolve_theme(app_id, force_refresh, game_name, exclude)
+    local key = tostring(app_id)
+    game_name = native_string(game_name or "", 300)
+    local is_reroll = type(exclude) == "string" and exclude ~= ""
+    local prev = read_file(RESOLVE_MARKER)
+    if prev and prev ~= "" and prev == key and not is_reroll then
+        pcall(os.remove, RESOLVE_MARKER)
+        cache[key] = nil
+        save_cache()
+        return json.encode({ ok = false, error = "skipped_after_crash" })
+    end
+    write_file(RESOLVE_MARKER, key)
     local ok, result = pcall(function()
         if not game_name or game_name == "" then return json.encode({ ok = false, error = "missing_game_name" }) end
         local key = tostring(app_id)
@@ -837,6 +956,7 @@ local function resolve_theme(app_id, force_refresh, game_name, exclude)
         local url = LOOPBACK_BASE .. r.file .. "?v=" .. tostring(ts)
         return json.encode({ ok = true, url = url, title = sanitize_text(r.title), cached = false })
     end)
+    pcall(os.remove, RESOLVE_MARKER)
     if not ok then logger:warn("resolve_theme crashed: " .. tostring(result)); return json.encode({ ok = false, error = "internal_error" }) end
     return result
 end
@@ -1063,15 +1183,34 @@ function log_frontend(message)
 end
 
 local function on_load()
+    local prev_boot = tonumber(read_file(BOOT_MARKER) or "") or 0
+    if prev_boot >= 1 then
+        pcall(os.remove, CACHE_FILE)
+        pcall(os.remove, RESOLVE_MARKER)
+        if prev_boot >= 2 then pcall(os.remove, CUSTOM_FILE) end
+        pcall(function() logger:warn("previous boot did not finish (attempt " .. prev_boot .. "); reset state") end)
+    end
+    write_file(BOOT_MARKER, tostring(prev_boot + 1))
     load_state()
+    local prev = read_file(RESOLVE_MARKER)
+    if prev and prev ~= "" then
+        cache[prev] = nil
+        custom[prev] = nil
+        save_cache()
+        save_custom()
+        pcall(os.remove, RESOLVE_MARKER)
+        pcall(function() logger:warn("cleared state after previous crash for app " .. prev) end)
+    end
+    pcall(os.remove, BOOT_MARKER)
     millennium.ready()
     cleanup_legacy_worker()
 end
 
 local function on_unload()
-    save_cache()
-    save_settings()
-    save_custom()
+    pcall(os.remove, BOOT_MARKER)
+    pcall(save_cache)
+    pcall(save_settings)
+    pcall(save_custom)
 end
 
 return { on_load = on_load, on_unload = on_unload }
