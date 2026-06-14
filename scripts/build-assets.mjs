@@ -13,7 +13,7 @@ const outPath    = join(root, 'webkit', '_assets.generated.ts');
 const welcomeCss  = readFileSync(join(welcomeDir, 'welcome.css'),  'utf8');
 const welcomeHtml = readFileSync(join(welcomeDir, 'welcome.html'), 'utf8');
 
-const ICON_NAMES = ['music', 'search', 'sparkles', 'zap', 'settings', 'x', 'play'];
+const ICON_NAMES = ['music', 'search', 'sparkles', 'zap', 'settings', 'x', 'play', 'library'];
 const icons = Object.fromEntries(
   ICON_NAMES.map((name) => [name, readFileSync(join(iconsDir, `${name}.svg`), 'utf8').trim()]),
 );

@@ -7,13 +7,18 @@ import { reapplyForApp, setLibWindowOpen, setGlobalCustomCount, getLibWindowOpen
 import type { LibApp, CustomMap } from '../core/types';
 import { ACCEPT_EXTS, MAX_UPLOAD_BYTES, MAX_CARDS, decodeCustomItems, getLibraryApps, uploadCustomMusic } from './library';
 
-function coverCandidates(appid: number): string[] {
-  return [
+function coverCandidates(app: LibApp): string[] {
+  const appid = app.appid;
+  const list: string[] = [];
+  if (app.cover) list.push(app.cover);
+  list.push(
     `https://cdn.cloudflare.steamstatic.com/steam/apps/${appid}/library_600x900.jpg`,
     `https://steamcdn-a.akamaihd.net/steam/apps/${appid}/library_600x900.jpg`,
+    `https://cdn.cloudflare.steamstatic.com/steam/apps/${appid}/capsule_616x353.jpg`,
     `https://cdn.cloudflare.steamstatic.com/steam/apps/${appid}/header.jpg`,
     `https://steamcdn-a.akamaihd.net/steam/apps/${appid}/header.jpg`,
-  ];
+  );
+  return list;
 }
 
 interface GameCardProps {
@@ -26,7 +31,7 @@ interface GameCardProps {
 }
 
 const GameCard = memo(function GameCard({ app, customTitle, busy, onSet, onClear }: GameCardProps) {
-  const urls = useMemo(() => coverCandidates(app.appid), [app.appid]);
+  const urls = useMemo(() => coverCandidates(app), [app.appid, app.cover]);
   const [idx, setIdx] = useState(0);
   const failed = idx >= urls.length;
   const hasCustom = customTitle !== undefined;
