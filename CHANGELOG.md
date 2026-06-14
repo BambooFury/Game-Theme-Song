@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.4.4](https://github.com/BambooFury/Game-Theme-Song/compare/v1.4.3...v1.4.4) (2026-06-14)
+
+
+### Bug Fixes
+
+* harden native boundaries to prevent Lua VM crash ([8a1161d](https://github.com/BambooFury/Game-Theme-Song/commit/8a1161d7d560cb07bd8962105713f868a7adfac8))
+* refresh welcome modal and re-show ([0114643](https://github.com/BambooFury/Game-Theme-Song/commit/0114643a8bd8dd5d69b2c212aa8cea6c3d25f73b))
+* show cover art for non-Steam library entries ([ac061a2](https://github.com/BambooFury/Game-Theme-Song/commit/ac061a2cf79134f83bf98caf6843825bdfb54693))
+* show cover art for non-Steam library entries ([9dc6e36](https://github.com/BambooFury/Game-Theme-Song/commit/9dc6e366e0acbf94ebbf50aa8867c45be268e0da))
+
 ## [1.4.3](https://github.com/BambooFury/Game-Theme-Song/compare/v1.4.2...v1.4.3) (2026-06-14)
 
 
