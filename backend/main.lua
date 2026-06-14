@@ -896,7 +896,11 @@ local function sc_resolve(game_name, key, exclude_set, dl_base)
     return nil, "sc_download_failed"
 end
 
+local resolve_busy = false
+
 local function resolve_theme(app_id, force_refresh, game_name, exclude)
+    if resolve_busy then return json.encode({ ok = false, error = "busy" }) end
+    resolve_busy = true
     local key = tostring(app_id)
     game_name = native_string(game_name or "", 300)
     local is_reroll = type(exclude) == "string" and exclude ~= ""
@@ -905,6 +909,7 @@ local function resolve_theme(app_id, force_refresh, game_name, exclude)
         pcall(os.remove, RESOLVE_MARKER)
         cache[key] = nil
         save_cache()
+        resolve_busy = false
         return json.encode({ ok = false, error = "skipped_after_crash" })
     end
     write_file(RESOLVE_MARKER, key)
@@ -957,6 +962,7 @@ local function resolve_theme(app_id, force_refresh, game_name, exclude)
         return json.encode({ ok = true, url = url, title = sanitize_text(r.title), cached = false })
     end)
     pcall(os.remove, RESOLVE_MARKER)
+    resolve_busy = false
     if not ok then logger:warn("resolve_theme crashed: " .. tostring(result)); return json.encode({ ok = false, error = "internal_error" }) end
     return result
 end
@@ -1187,19 +1193,20 @@ local function on_load()
     if prev_boot >= 1 then
         pcall(os.remove, CACHE_FILE)
         pcall(os.remove, RESOLVE_MARKER)
-        if prev_boot >= 2 then pcall(os.remove, CUSTOM_FILE) end
-        pcall(function() logger:warn("previous boot did not finish (attempt " .. prev_boot .. "); reset state") end)
+        if prev_boot >= 2 then
+            local cdata = read_file(CUSTOM_FILE)
+            if cdata and cdata ~= "" then write_file(CUSTOM_FILE .. ".bak", cdata) end
+        end
+        pcall(function() logger:warn("previous boot did not finish (attempt " .. prev_boot .. "); reset cache") end)
     end
     write_file(BOOT_MARKER, tostring(prev_boot + 1))
     load_state()
     local prev = read_file(RESOLVE_MARKER)
     if prev and prev ~= "" then
         cache[prev] = nil
-        custom[prev] = nil
         save_cache()
-        save_custom()
         pcall(os.remove, RESOLVE_MARKER)
-        pcall(function() logger:warn("cleared state after previous crash for app " .. prev) end)
+        pcall(function() logger:warn("cleared cache after previous crash for app " .. prev) end)
     end
     pcall(os.remove, BOOT_MARKER)
     millennium.ready()
