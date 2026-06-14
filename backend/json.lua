@@ -118,17 +118,18 @@ local function decode_error(str, idx, msg)
 end
 local function codepoint_to_utf8(n)
   local f = math.floor
+  if not n or n < 0 or n > 0x10ffff or (n >= 0xd800 and n <= 0xdfff) then
+    return string.char(0xef, 0xbf, 0xbd)
+  end
   if n <= 0x7f then
     return string.char(n)
   elseif n <= 0x7ff then
     return string.char(f(n / 64) + 192, n % 64 + 128)
   elseif n <= 0xffff then
     return string.char(f(n / 4096) + 224, f(n % 4096 / 64) + 128, n % 64 + 128)
-  elseif n <= 0x10ffff then
-    return string.char(f(n / 262144) + 240, f(n % 262144 / 4096) + 128,
-                       f(n % 4096 / 64) + 128, n % 64 + 128)
   end
-  error( string.format("invalid unicode codepoint '%x'", n) )
+  return string.char(f(n / 262144) + 240, f(n % 262144 / 4096) + 128,
+                     f(n % 4096 / 64) + 128, n % 64 + 128)
 end
 local function parse_unicode_escape(s)
   local n1 = tonumber( s:sub(1, 4),  16 )

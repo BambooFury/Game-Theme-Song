@@ -67,8 +67,41 @@ local MAX_HTTP_BYTES = 3 * 1024 * 1024
 local MAX_TITLE_LEN = 200
 local MAX_LIST_ITEMS = 500
 
+local function to_valid_utf8(s)
+    if type(s) ~= "string" then return s end
+    local out, i, n = {}, 1, #s
+    local repl = "\239\191\189"
+    while i <= n do
+        local c = s:byte(i)
+        if c < 0x80 then
+            out[#out + 1] = string.char(c); i = i + 1
+        elseif c >= 0xC2 and c <= 0xDF and i + 1 <= n
+                and s:byte(i + 1) >= 0x80 and s:byte(i + 1) <= 0xBF then
+            out[#out + 1] = s:sub(i, i + 1); i = i + 2
+        elseif c >= 0xE0 and c <= 0xEF and i + 2 <= n then
+            local c2, c3 = s:byte(i + 1), s:byte(i + 2)
+            local ok = c2 >= 0x80 and c2 <= 0xBF and c3 >= 0x80 and c3 <= 0xBF
+                and not (c == 0xE0 and c2 < 0xA0)
+                and not (c == 0xED and c2 >= 0xA0)
+            if ok then out[#out + 1] = s:sub(i, i + 2); i = i + 3
+            else out[#out + 1] = repl; i = i + 1 end
+        elseif c >= 0xF0 and c <= 0xF4 and i + 3 <= n then
+            local c2, c3, c4 = s:byte(i + 1), s:byte(i + 2), s:byte(i + 3)
+            local ok = c2 >= 0x80 and c2 <= 0xBF and c3 >= 0x80 and c3 <= 0xBF
+                and c4 >= 0x80 and c4 <= 0xBF
+                and not (c == 0xF0 and c2 < 0x90)
+                and not (c == 0xF4 and c2 > 0x8F)
+            if ok then out[#out + 1] = s:sub(i, i + 3); i = i + 4
+            else out[#out + 1] = repl; i = i + 1 end
+        else
+            out[#out + 1] = repl; i = i + 1
+        end
+    end
+    return table.concat(out)
+end
+
 local function sanitize_text(s, max_len)
-    s = tostring(s or ""):gsub("[%z\1-\8\11\12\14-\31\127]", "")
+    s = to_valid_utf8(tostring(s or "")):gsub("[%z\1-\8\11\12\14-\31\127]", "")
     max_len = max_len or MAX_TITLE_LEN
     if #s > max_len then s = s:sub(1, max_len) end
     return s
@@ -113,16 +146,20 @@ local function json_safe_to_decode(str, max_depth)
     return true
 end
 
+local function presanitize_json(str)
+    str = to_valid_utf8(str)
+    str = str:gsub("\\[uU][dD][89aAbBcCdDeEfF]%x%x", "\\uFFFD")
+    return str
+end
+
 local function safe_decode(str, tag)
     if not str or str == "" then return nil end
-    logger:info(string.format("json.decode[%s] len=%d head=%s", tostring(tag or "?"), #str, (str:sub(1, 80):gsub("%c", " "))))
+    str = presanitize_json(str)
     if not json_safe_to_decode(str, MAX_JSON_DEPTH) then
-        logger:warn(string.format("json.decode[%s] rejected by guard len=%d", tostring(tag or "?"), #str))
         return nil
     end
     local ok, val = pcall(json.decode, str)
     if not ok then
-        logger:warn(string.format("json.decode[%s] pcall error len=%d", tostring(tag or "?"), #str))
         return nil
     end
     return val
@@ -131,7 +168,6 @@ end
 local function safe_encode(val, tag)
     local ok, res = pcall(json.encode, val)
     if not ok then
-        logger:warn(string.format("json.encode[%s] failed: %s", tostring(tag or "?"), tostring(res)))
         return nil
     end
     return res
@@ -160,9 +196,20 @@ local function merge_defaults(target, defaults)
     return target
 end
 
+local function scrub_state(tbl)
+    if type(tbl) ~= "table" then return tbl end
+    for _, entry in pairs(tbl) do
+        if type(entry) == "table" then
+            if type(entry.title) == "string" then entry.title = to_valid_utf8(entry.title) end
+            if type(entry.name) == "string" then entry.name = to_valid_utf8(entry.name) end
+        end
+    end
+    return tbl
+end
+
 local function load_state()
-    cache = safe_decode(read_file(CACHE_FILE), "cache_file") or {}
-    custom = safe_decode(read_file(CUSTOM_FILE), "custom_file") or {}
+    cache = scrub_state(safe_decode(read_file(CACHE_FILE), "cache_file") or {})
+    custom = scrub_state(safe_decode(read_file(CUSTOM_FILE), "custom_file") or {})
     local loaded = safe_decode(read_file(CONFIG_FILE), "config_file") or {}
     if (loaded.config_version or 0) < CONFIG_VERSION then loaded.config_version = CONFIG_VERSION end
     settings = merge_defaults(loaded, DEFAULT_SETTINGS)
@@ -1012,7 +1059,6 @@ function clear_cache_for(app_id)
 end
 
 function log_frontend(message)
-    logger:info("[frontend] " .. tostring(message))
     return json.encode({ ok = true })
 end
 
