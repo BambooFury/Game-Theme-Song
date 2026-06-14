@@ -18,6 +18,21 @@ export function decodeCustomItems(items: Record<string, { title_b64?: string; na
   return out;
 }
 
+function resolveCover(ov: any): string | undefined {
+  const as: any = (window as any).appStore;
+  for (const fn of ['GetVerticalCapsuleURLForApp', 'GetCachedVerticalCapsuleURL']) {
+    try {
+      const u = as && typeof as[fn] === 'function' ? as[fn].call(as, ov) : undefined;
+      if (typeof u === 'string' && u && !u.endsWith('/')) return u;
+    } catch (e) {}
+  }
+  for (const key of ['m_strVerticalCapsuleURL', 'm_strLocalCachedVerticalCapsuleURL', 'm_strSelectedLandscapeArtworkURL']) {
+    const v = ov?.[key];
+    if (typeof v === 'string' && v) return v;
+  }
+  return undefined;
+}
+
 export function getLibraryApps(): LibApp[] {
   const out: LibApp[] = [];
   const seen = new Set<number>();
@@ -27,7 +42,7 @@ export function getLibraryApps(): LibApp[] {
     if (!appid || Number.isNaN(appid) || seen.has(appid)) return;
     const name = ov.display_name ?? ov.appname ?? ov.strDisplayName ?? ov.name ?? `App ${appid}`;
     seen.add(appid);
-    out.push({ appid, name: String(name) });
+    out.push({ appid, name: String(name), cover: resolveCover(ov) });
   };
   try {
     const cs: any = (window as any).collectionStore;

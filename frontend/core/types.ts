@@ -20,6 +20,7 @@ export interface CacheInfo {
 export interface LibApp {
   appid: number;
   name: string;
+  cover?: string;
 }
 
 export type CustomMap = Record<string, { title?: string; name?: string }>;
