@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.6](https://github.com/BambooFury/Game-Theme-Song/compare/v1.4.5...v1.4.6) (2026-06-14)
+
+
+### Performance
+
+* cache library/khinsider lookups and debounce reroll to stop VM crash ([d1708e8](https://github.com/BambooFury/Game-Theme-Song/commit/d1708e840f22edf1b671110de7ed09efb195f75c))
+
 ## [1.4.5](https://github.com/BambooFury/Game-Theme-Song/compare/v1.4.4...v1.4.5) (2026-06-14)
 
 
