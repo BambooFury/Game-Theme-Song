@@ -581,7 +581,10 @@ local function vdf_unescape(v)
     return (tostring(v):gsub("\\\\", "\\"))
 end
 
+local _libs_cache, _libs_cache_ts = nil, 0
 local function steam_libraries()
+    local now = os.time()
+    if _libs_cache and (now - _libs_cache_ts) < 60 then return _libs_cache end
     local libs, seen = {}, {}
     local function add(p)
         p = norm_path(p)
@@ -597,6 +600,7 @@ local function steam_libraries()
     if body then
         for p in body:gmatch('"path"%s*"([^"]*)"') do add(vdf_unescape(p)) end
     end
+    _libs_cache, _libs_cache_ts = libs, now
     return libs
 end
 
@@ -658,9 +662,17 @@ local function score_local_file(rel)
     return score
 end
 
+local _soundtrack_cache = {}
 local function pick_soundtrack_track(game_name)
     local target = norm_words(clean_game_name(game_name)):gsub("^%s+", ""):gsub("%s+$", "")
     if #target < 3 then return nil end
+    local now = os.time()
+    local cached = _soundtrack_cache[target]
+    if cached and (now - cached.ts) < 90 then
+        if cached.value == false then return nil end
+        return cached.value
+    end
+    local found = nil
     for _, lib in ipairs(steam_libraries()) do
         local entries = fs.list(join(lib, "steamapps", "music"))
         if type(entries) == "table" then
@@ -673,12 +685,14 @@ local function pick_soundtrack_track(game_name)
                         if f.name:match("^%D*0?1[%.%s%-_]") then sc = sc + 12 end
                         if not best or sc > best_score or (sc == best_score and f.name < best.name) then best, best_score = f, sc end
                     end
-                    if best then return best end
+                    if best then found = best; break end
                 end
             end
         end
+        if found then break end
     end
-    return nil
+    _soundtrack_cache[target] = { value = found or false, ts = now }
+    return found
 end
 
 local function pick_install_track(dir)
@@ -774,34 +788,48 @@ local function khinsider_pick_tracks(body)
     return tracks
 end
 
+local _khinsider_cache = {}
+local _track_mp3_cache = {}
 local function khinsider_resolve(game_name, key, exclude_set, dl_base)
     dl_base = dl_base or key
     if not http_available() then return nil, "http_module_missing" end
     local query = tostring(game_name):gsub("\226\132\162", ""):gsub("\194\174", ""):gsub("\194\169", "")
-    local body, err = khinsider_get(KHINSIDER_BASE .. "/search?search=" .. url_encode(query))
-    if not body then return nil, "khinsider_search_failed: " .. tostring(err) end
-    local album = khinsider_pick_album(body, query)
-    if not album then return nil, "khinsider_no_album" end
-    local album_body, aerr = khinsider_get(KHINSIDER_BASE .. album.href)
-    if not album_body then return nil, "khinsider_album_failed: " .. tostring(aerr) end
-    local tracks = khinsider_pick_tracks(album_body)
-    if not tracks then return nil, "khinsider_no_tracks" end
+    local now = os.time()
+    local album, tracks
+    local cached = _khinsider_cache[query]
+    if cached and (now - cached.ts) < 180 then
+        album, tracks = cached.album, cached.tracks
+    else
+        local body, err = khinsider_get(KHINSIDER_BASE .. "/search?search=" .. url_encode(query))
+        if not body then return nil, "khinsider_search_failed: " .. tostring(err) end
+        album = khinsider_pick_album(body, query)
+        if not album then return nil, "khinsider_no_album" end
+        local album_body, aerr = khinsider_get(KHINSIDER_BASE .. album.href)
+        if not album_body then return nil, "khinsider_album_failed: " .. tostring(aerr) end
+        tracks = khinsider_pick_tracks(album_body)
+        if not tracks then return nil, "khinsider_no_tracks" end
+        _khinsider_cache[query] = { album = album, tracks = tracks, ts = now }
+    end
     local last_err = "khinsider_no_tracks"
     for _, track in ipairs(tracks) do
         local title = track.name .. " (" .. album.title .. ")"
         if not is_excluded(exclude_set, title) then
-            local track_body, terr = khinsider_get(KHINSIDER_BASE .. track.href)
-            if not track_body then
-                last_err = "khinsider_track_failed: " .. tostring(terr)
-            else
-                local mp3 = track_body:match('href="(https://[^"]+%.mp3)"')
-                if not mp3 then
-                    last_err = "khinsider_no_mp3_link"
+            local mp3 = _track_mp3_cache[track.href]
+            if not mp3 then
+                local track_body, terr = khinsider_get(KHINSIDER_BASE .. track.href)
+                if track_body then
+                    mp3 = track_body:match('href="(https://[^"]+%.mp3)"')
+                    if mp3 then _track_mp3_cache[track.href] = mp3 end
                 else
-                    local filename, dl_err = download_file(dl_base, "mp3", mp3, BROWSER_UA)
-                    if filename then return { file = filename, title = title }, nil end
-                    last_err = dl_err
+                    last_err = "khinsider_track_failed: " .. tostring(terr)
                 end
+            end
+            if mp3 then
+                local filename, dl_err = download_file(dl_base, "mp3", mp3, BROWSER_UA)
+                if filename then return { file = filename, title = title }, nil end
+                last_err = dl_err
+            elseif last_err == "khinsider_no_tracks" then
+                last_err = "khinsider_no_mp3_link"
             end
         end
     end

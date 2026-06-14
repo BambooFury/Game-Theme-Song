@@ -243,17 +243,31 @@ async function resolveAndPlay(
   return { ok: ok2, title: r2.title ?? null, url: ok2 ? r2.url : null, cached: false };
 }
 
-export async function rerollCurrent(): Promise<void> {
+const REROLL_DEBOUNCE_MS = 450;
+let rerollDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+export function rerollCurrent(): void {
   const appId = currentAppId;
   const name = currentGameName;
   if (appId == null || !name) return;
   if (!state.settings.manual_search) return;
-  if (toastMode === 'searching') return;
-  if (currentTitle) rerollExclude = [...rerollExclude, currentTitle];
-  const mySeq = ++activeSeq;
-  const getSeq = () => activeSeq;
+  if (currentTitle && !rerollExclude.includes(currentTitle)) rerollExclude = [...rerollExclude, currentTitle];
+  ++activeSeq;
   stopAudio(0.25);
   setToast('searching');
+  if (rerollDebounceTimer != null) clearTimeout(rerollDebounceTimer);
+  rerollDebounceTimer = setTimeout(() => {
+    rerollDebounceTimer = null;
+    void runReroll();
+  }, REROLL_DEBOUNCE_MS);
+}
+
+async function runReroll(): Promise<void> {
+  const appId = currentAppId;
+  const name = currentGameName;
+  if (appId == null || !name) return;
+  const mySeq = activeSeq;
+  const getSeq = () => activeSeq;
   try {
     const { ok, title, url } = await resolveAndPlay(appId, name, mySeq, getSeq, rerollExclude);
     if (mySeq !== activeSeq) return;
