@@ -1215,11 +1215,6 @@ function clear_cache_for(app_id)
     return result
 end
 
-function log_frontend(message)
-    pcall(function() logger:warn("frontend: " .. tostring(message)) end)
-    return json.encode({ ok = true })
-end
-
 local function on_load()
     local prev_boot = tonumber(read_file(BOOT_MARKER) or "") or 0
     if prev_boot >= 1 then
