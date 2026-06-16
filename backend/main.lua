@@ -1213,6 +1213,7 @@ function clear_cache_for(app_id)
 end
 
 function log_frontend(message)
+    pcall(function() logger:warn("frontend: " .. tostring(message)) end)
     return json.encode({ ok = true })
 end
 
