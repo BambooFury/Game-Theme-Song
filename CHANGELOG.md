@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.4.8](https://github.com/BambooFury/Game-Theme-Song/compare/v1.4.7...v1.4.8) (2026-06-16)
+
+
+### Bug Fixes
+
+* add package.json to release-please extra-files ([485cba7](https://github.com/BambooFury/Game-Theme-Song/commit/485cba70b643ba6e7a42ab15f0f76d1b36c69271))
+* defer audio stop until navigation debounce settles ([66336bc](https://github.com/BambooFury/Game-Theme-Song/commit/66336bc3ad1d30c0f5e7a08c9cbeffa92951dd84))
+* drop unused tag parameter from JSON safe helpers ([707a5f3](https://github.com/BambooFury/Game-Theme-Song/commit/707a5f328a6af035112901025ba027cc10e2d357))
+* log frontend messages instead of silently dropping them ([248ad9e](https://github.com/BambooFury/Game-Theme-Song/commit/248ad9ecc0f7e968e065e8793414ca9c5e54d0fc))
+* log frontend messages instead of silently dropping them ([cbefec7](https://github.com/BambooFury/Game-Theme-Song/commit/cbefec7dd7ddebc10c1eaf3705fa14225b05a5e6))
+* reject truncated audio downloads below minimum size ([a36e30d](https://github.com/BambooFury/Game-Theme-Song/commit/a36e30d3d9cf7ca61932f27ab4ada6107b310403))
+* remove unused legacy worker marker write from cleanup ([ca22055](https://github.com/BambooFury/Game-Theme-Song/commit/ca220554512b637f99344efb2e7d6b36ea455456))
+* remove unused log_frontend backend handler ([0557ffd](https://github.com/BambooFury/Game-Theme-Song/commit/0557ffd7e923b8bf32597b23e23d1372294189ad))
+* reset in-memory caches in clear_cache_for ([8a62e14](https://github.com/BambooFury/Game-Theme-Song/commit/8a62e1438bec0388c8124e9a2df036ddb886a6f1))
+* reset in-memory lookups when audio cache is cleared ([59fb507](https://github.com/BambooFury/Game-Theme-Song/commit/59fb507f4bb0dd471fd34730ca1d669e32d09e99))
+* stop probeUrl spam and unused reportError/logFrontend calls ([ae61b3b](https://github.com/BambooFury/Game-Theme-Song/commit/ae61b3bf79e00483027e97475f3949ba9cc02b3b))
+* use customMapRef in onFilePicked to avoid stale closure ([ce1c225](https://github.com/BambooFury/Game-Theme-Song/commit/ce1c225902992f0c5fa2646737e8127b5c90305b))
+* use exponential backoff when resolving game name ([e4791c1](https://github.com/BambooFury/Game-Theme-Song/commit/e4791c19571265400e5800ab0660cc2cff690367))
+
 ## [1.4.7](https://github.com/BambooFury/Game-Theme-Song/compare/v1.4.6...v1.4.7) (2026-06-16)
 
 
