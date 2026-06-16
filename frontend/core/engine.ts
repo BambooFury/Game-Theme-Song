@@ -428,13 +428,19 @@ function detectAppId(): number | null {
 
 const POLL_MS = 500;
 const NAV_DEBOUNCE_MS = 800;
+const BOOT_GRACE_MS = 6000;
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 let navDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 let lastDetectedAppId: number | null = null;
+let bootObserveUntil = 0;
 
 function pollOnce() {
   let id: number | null = null;
   try { id = detectAppId(); } catch { return; }
+  if (bootObserveUntil !== 0 && Date.now() < bootObserveUntil) {
+    lastDetectedAppId = id;
+    return;
+  }
   if (id === lastDetectedAppId) return;
   lastDetectedAppId = id;
 
@@ -454,6 +460,7 @@ function pollOnce() {
 
 export function startPolling() {
   if (pollTimer) return;
+  bootObserveUntil = Date.now() + BOOT_GRACE_MS;
   pollTimer = setInterval(pollOnce, POLL_MS);
   setTimeout(pollOnce, 100);
 }
