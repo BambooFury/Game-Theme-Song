@@ -1,6 +1,6 @@
 import type { Settings, CacheInfo } from './types';
 import { getThemeAudio, rerollTheme, invalidateAudio, getBackendSettings } from './api';
-import { warn, reportError } from './log';
+import { warn } from './log';
 
 const DEFAULTS: Settings = {
   enabled: true,
@@ -98,17 +98,6 @@ export function stopAudio(durationSec = state.settings.fade_seconds) {
   });
 }
 
-async function probeUrl(url: string) {
-  try {
-    const r = await fetch(url);
-    const buf = new Uint8Array(await r.arrayBuffer());
-    const hex = Array.from(buf.slice(0, 16)).map(b => b.toString(16).padStart(2, '0')).join(' ');
-    reportError(`probe status=${r.status} type=${r.headers.get('content-type')} size=${buf.length} head=${hex}`);
-  } catch (e: any) {
-    reportError(`probe failed: ${e?.name ?? ''} ${e?.message ?? e}`);
-  }
-}
-
 async function playUrl(url: string, mySeq: number, active: () => number): Promise<boolean> {
   if (mySeq !== active()) return false;
   limitStopping = false;
@@ -116,7 +105,7 @@ async function playUrl(url: string, mySeq: number, active: () => number): Promis
   clearFade();
   a.onerror = () => {
     const err = a.error;
-    reportError(`audio element error: code=${err?.code ?? '?'} message=${err?.message ?? ''} networkState=${a.networkState} readyState=${a.readyState}`);
+    warn(`audio element error: code=${err?.code ?? '?'} message=${err?.message ?? ''} networkState=${a.networkState} readyState=${a.readyState}`);
   };
   a.volume = 0;
   a.muted = false;
@@ -141,8 +130,7 @@ async function playUrl(url: string, mySeq: number, active: () => number): Promis
     if (result === 'ok') a.muted = false;
   }
   if (result !== 'ok') {
-    reportError(`audio play failed: ${result} (mediaError=${a.error?.code ?? 'none'})`);
-    void probeUrl(url);
+    warn(`audio play failed: ${result} (mediaError=${a.error?.code ?? 'none'})`);
     return false;
   }
   if (mySeq !== active()) {
