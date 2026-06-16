@@ -432,15 +432,13 @@ function pollOnce() {
   if (id === lastDetectedAppId) return;
   lastDetectedAppId = id;
 
-  if (id !== currentAppId) {
-    stopAudio();
-    ++activeSeq;
-  }
+  if (id !== currentAppId) ++activeSeq;
   if (navDebounceTimer) clearTimeout(navDebounceTimer);
   navDebounceTimer = setTimeout(() => {
     navDebounceTimer = null;
     const finalId = detectAppId();
     if (finalId === currentAppId) return;
+    stopAudio();
     if (finalId === null) { currentAppId = null; setToast('off'); }
     else void playForApp(finalId);
   }, NAV_DEBOUNCE_MS);
