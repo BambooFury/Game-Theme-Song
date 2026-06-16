@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.4.7](https://github.com/BambooFury/Game-Theme-Song/compare/v1.4.6...v1.4.7) (2026-06-16)
+
+
+### Bug Fixes
+
+* add boot grace window to avoid VM crash on startup ([a4a7552](https://github.com/BambooFury/Game-Theme-Song/commit/a4a7552d735451aaa93ae1d0073859ce78ebd04d))
+* simplify Custom music & Downloaded music modals ([bed2d2b](https://github.com/BambooFury/Game-Theme-Song/commit/bed2d2bb1c698f60577a97bb9529cf215e2830ed))
+* simplify Custom music & Downloaded music modals ([cf33fd2](https://github.com/BambooFury/Game-Theme-Song/commit/cf33fd2c64e63f960ea4e00419aa60788ad1e48f))
+
 ## [1.4.6](https://github.com/BambooFury/Game-Theme-Song/compare/v1.4.5...v1.4.6) (2026-06-14)
 
 
