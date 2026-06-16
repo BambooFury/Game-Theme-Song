@@ -154,9 +154,11 @@ async function resolveGameName(appId: number): Promise<string | null> {
     return null;
   };
   let name = tryOnce();
-  for (let i = 0; i < 10 && !name; i++) {
-    await new Promise(r => setTimeout(r, 150));
+  let delay = 50;
+  for (let i = 0; i < 7 && !name; i++) {
+    await new Promise(r => setTimeout(r, delay));
     name = tryOnce();
+    delay = Math.min(delay * 2, 500);
   }
   return name;
 }
