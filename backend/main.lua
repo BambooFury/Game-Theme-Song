@@ -154,7 +154,7 @@ local function presanitize_json(str)
     return str
 end
 
-local function safe_decode(str, tag)
+local function safe_decode(str)
     if not str or str == "" then return nil end
     str = presanitize_json(str)
     if not json_safe_to_decode(str, MAX_JSON_DEPTH) then
@@ -167,7 +167,7 @@ local function safe_decode(str, tag)
     return val
 end
 
-local function safe_encode(val, tag)
+local function safe_encode(val)
     local ok, res = pcall(json.encode, val)
     if not ok then
         return nil
@@ -302,17 +302,17 @@ end
 
 local function load_state()
     local ok_c = pcall(function()
-        cache = scrub_state(safe_decode(read_file(CACHE_FILE), "cache_file") or {})
+        cache = scrub_state(safe_decode(read_file(CACHE_FILE)) or {})
     end)
     if not ok_c or type(cache) ~= "table" then cache = {}; pcall(os.remove, CACHE_FILE) end
 
     local ok_u = pcall(function()
-        custom = scrub_state(safe_decode(read_file(CUSTOM_FILE), "custom_file") or {})
+        custom = scrub_state(safe_decode(read_file(CUSTOM_FILE)) or {})
     end)
     if not ok_u or type(custom) ~= "table" then custom = {}; pcall(os.remove, CUSTOM_FILE) end
 
     local ok_s = pcall(function()
-        local loaded = safe_decode(read_file(CONFIG_FILE), "config_file") or {}
+        local loaded = safe_decode(read_file(CONFIG_FILE)) or {}
         if type(loaded) ~= "table" then loaded = {} end
         if (loaded.config_version or 0) < CONFIG_VERSION then loaded.config_version = CONFIG_VERSION end
         settings = merge_defaults(loaded, DEFAULT_SETTINGS)
@@ -324,15 +324,15 @@ local function load_state()
 end
 
 local function save_cache()
-    local s = safe_encode(cache, "cache"); if s then write_file(CACHE_FILE, s) end
+    local s = safe_encode(cache); if s then write_file(CACHE_FILE, s) end
 end
 
 local function save_settings()
-    local s = safe_encode(settings, "settings"); if s then write_file(CONFIG_FILE, s) end
+    local s = safe_encode(settings); if s then write_file(CONFIG_FILE, s) end
 end
 
 local function save_custom()
-    local s = safe_encode(custom, "custom"); if s then write_file(CUSTOM_FILE, s) end
+    local s = safe_encode(custom); if s then write_file(CUSTOM_FILE, s) end
 end
 
 local function cleanup_legacy_worker()
@@ -514,7 +514,7 @@ end
 
 local function build_exclude(exclude)
     local set = {}
-    if type(exclude) == "string" and exclude ~= "" then exclude = safe_decode(exclude, "exclude") end
+    if type(exclude) == "string" and exclude ~= "" then exclude = safe_decode(exclude) end
     if type(exclude) == "table" then
         for _, title in ipairs(exclude) do
             if type(title) == "string" and title ~= "" then
@@ -877,7 +877,7 @@ local function sc_api(path_and_query)
     if not resp or resp.status ~= 200 or not resp.body then
         return nil, "sc_api_failed_" .. tostring(resp and resp.status)
     end
-    return safe_decode(cap_body(resp.body), "sc_api"), nil
+    return safe_decode(cap_body(resp.body)), nil
 end
 
 local function sc_resolve(game_name, key, exclude_set, dl_base)
@@ -912,7 +912,7 @@ local function sc_resolve(game_name, key, exclude_set, dl_base)
             tried = tried + 1
             local sep = c.stream_api:find("?", 1, true) and "&" or "?"
             local resp = http.request(c.stream_api .. sep .. "client_id=" .. tostring(sc_client_id), { user_agent = SC_UA })
-            local meta = (resp and resp.status == 200 and resp.body) and safe_decode(cap_body(resp.body), "sc_meta") or nil
+            local meta = (resp and resp.status == 200 and resp.body) and safe_decode(cap_body(resp.body)) or nil
             if meta and type(meta.url) == "string" then
                 local file, dl_err = download_file(dl_base, "mp3", meta.url, SC_UA)
                 if file then return { file = file, title = c.title }, nil end
@@ -1117,7 +1117,7 @@ function clear_custom_music(app_id)
 end
 
 function get_settings()
-    local fresh = safe_decode(read_file(CONFIG_FILE), "config_reload")
+    local fresh = safe_decode(read_file(CONFIG_FILE))
     if type(fresh) == "table" then settings = merge_defaults(fresh, DEFAULT_SETTINGS) end
     return json.encode(settings)
 end
