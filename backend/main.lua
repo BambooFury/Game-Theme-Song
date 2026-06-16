@@ -37,14 +37,6 @@ local RESOLVE_MARKER = join(PLUGIN_DIR, "resolve.lock")
 local BOOT_MARKER = join(PLUGIN_DIR, "boot.lock")
 local AUDIO_DIR = join(norm_path(millennium.steam_path()), "steamui", "game_theme_song")
 local LOOPBACK_BASE = "https://steamloopback.host/game_theme_song/"
-local QUEUE_DIR = join(PLUGIN_DIR, "queue")
-local LEGACY_FILES = {
-    join(PLUGIN_DIR, "yt-dlp.exe"),
-    join(PLUGIN_DIR, "yt-dlp.exe.part"),
-    join(QUEUE_DIR, "worker.alive"),
-    join(QUEUE_DIR, "ytdlp-download.done"),
-    join(QUEUE_DIR, "ytdlp-install.ps1"),
-}
 local CONFIG_VERSION = 12
 
 local DEFAULT_SETTINGS = {
@@ -336,8 +328,14 @@ local function save_custom()
 end
 
 local function cleanup_legacy_worker()
-    write_file(join(QUEUE_DIR, "worker.expected_version"), "stop-" .. tostring(os.time()))
-    for _, path in ipairs(LEGACY_FILES) do
+    for _, path in ipairs({
+        join(PLUGIN_DIR, "yt-dlp.exe"),
+        join(PLUGIN_DIR, "yt-dlp.exe.part"),
+        join(PLUGIN_DIR, "queue", "worker.alive"),
+        join(PLUGIN_DIR, "queue", "ytdlp-download.done"),
+        join(PLUGIN_DIR, "queue", "ytdlp-install.ps1"),
+        join(PLUGIN_DIR, "queue", "worker.expected_version"),
+    }) do
         pcall(os.remove, path)
     end
 end
