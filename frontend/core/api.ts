@@ -6,7 +6,6 @@ export const rerollTheme = callable<[{ app_id: number | string; game_name: strin
 export const invalidateAudio = callable<[{ app_id: number | string }], string>('invalidate_audio');
 export const getBackendSettings = callable<NoArgs, string>('get_settings');
 export const setBackendSetting = callable<[{ key: string; value: Primitive }], string>('set_setting');
-export const logFrontend = callable<[{ message: string }], string>('log_frontend');
 export const getCacheInfo = callable<NoArgs, string>('get_cache_info');
 export const clearAudioCache = callable<NoArgs, string>('clear_audio_cache');
 export const getCacheList = callable<NoArgs, string>('get_cache_list');

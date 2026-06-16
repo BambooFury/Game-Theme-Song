@@ -37,14 +37,6 @@ local RESOLVE_MARKER = join(PLUGIN_DIR, "resolve.lock")
 local BOOT_MARKER = join(PLUGIN_DIR, "boot.lock")
 local AUDIO_DIR = join(norm_path(millennium.steam_path()), "steamui", "game_theme_song")
 local LOOPBACK_BASE = "https://steamloopback.host/game_theme_song/"
-local QUEUE_DIR = join(PLUGIN_DIR, "queue")
-local LEGACY_FILES = {
-    join(PLUGIN_DIR, "yt-dlp.exe"),
-    join(PLUGIN_DIR, "yt-dlp.exe.part"),
-    join(QUEUE_DIR, "worker.alive"),
-    join(QUEUE_DIR, "ytdlp-download.done"),
-    join(QUEUE_DIR, "ytdlp-install.ps1"),
-}
 local CONFIG_VERSION = 12
 
 local DEFAULT_SETTINGS = {
@@ -154,7 +146,7 @@ local function presanitize_json(str)
     return str
 end
 
-local function safe_decode(str, tag)
+local function safe_decode(str)
     if not str or str == "" then return nil end
     str = presanitize_json(str)
     if not json_safe_to_decode(str, MAX_JSON_DEPTH) then
@@ -167,7 +159,7 @@ local function safe_decode(str, tag)
     return val
 end
 
-local function safe_encode(val, tag)
+local function safe_encode(val)
     local ok, res = pcall(json.encode, val)
     if not ok then
         return nil
@@ -302,17 +294,17 @@ end
 
 local function load_state()
     local ok_c = pcall(function()
-        cache = scrub_state(safe_decode(read_file(CACHE_FILE), "cache_file") or {})
+        cache = scrub_state(safe_decode(read_file(CACHE_FILE)) or {})
     end)
     if not ok_c or type(cache) ~= "table" then cache = {}; pcall(os.remove, CACHE_FILE) end
 
     local ok_u = pcall(function()
-        custom = scrub_state(safe_decode(read_file(CUSTOM_FILE), "custom_file") or {})
+        custom = scrub_state(safe_decode(read_file(CUSTOM_FILE)) or {})
     end)
     if not ok_u or type(custom) ~= "table" then custom = {}; pcall(os.remove, CUSTOM_FILE) end
 
     local ok_s = pcall(function()
-        local loaded = safe_decode(read_file(CONFIG_FILE), "config_file") or {}
+        local loaded = safe_decode(read_file(CONFIG_FILE)) or {}
         if type(loaded) ~= "table" then loaded = {} end
         if (loaded.config_version or 0) < CONFIG_VERSION then loaded.config_version = CONFIG_VERSION end
         settings = merge_defaults(loaded, DEFAULT_SETTINGS)
@@ -324,20 +316,26 @@ local function load_state()
 end
 
 local function save_cache()
-    local s = safe_encode(cache, "cache"); if s then write_file(CACHE_FILE, s) end
+    local s = safe_encode(cache); if s then write_file(CACHE_FILE, s) end
 end
 
 local function save_settings()
-    local s = safe_encode(settings, "settings"); if s then write_file(CONFIG_FILE, s) end
+    local s = safe_encode(settings); if s then write_file(CONFIG_FILE, s) end
 end
 
 local function save_custom()
-    local s = safe_encode(custom, "custom"); if s then write_file(CUSTOM_FILE, s) end
+    local s = safe_encode(custom); if s then write_file(CUSTOM_FILE, s) end
 end
 
 local function cleanup_legacy_worker()
-    write_file(join(QUEUE_DIR, "worker.expected_version"), "stop-" .. tostring(os.time()))
-    for _, path in ipairs(LEGACY_FILES) do
+    for _, path in ipairs({
+        join(PLUGIN_DIR, "yt-dlp.exe"),
+        join(PLUGIN_DIR, "yt-dlp.exe.part"),
+        join(PLUGIN_DIR, "queue", "worker.alive"),
+        join(PLUGIN_DIR, "queue", "ytdlp-download.done"),
+        join(PLUGIN_DIR, "queue", "ytdlp-install.ps1"),
+        join(PLUGIN_DIR, "queue", "worker.expected_version"),
+    }) do
         pcall(os.remove, path)
     end
 end
@@ -514,7 +512,7 @@ end
 
 local function build_exclude(exclude)
     local set = {}
-    if type(exclude) == "string" and exclude ~= "" then exclude = safe_decode(exclude, "exclude") end
+    if type(exclude) == "string" and exclude ~= "" then exclude = safe_decode(exclude) end
     if type(exclude) == "table" then
         for _, title in ipairs(exclude) do
             if type(title) == "string" and title ~= "" then
@@ -558,6 +556,10 @@ local function download_file(key, ext, url, ua)
         pcall(fs.remove, path)
         local detail = err or (result and ("status_" .. tostring(result.status))) or "unknown"
         return nil, "download_failed: " .. tostring(detail)
+    end
+    if (result.bytes_written or 0) < 16384 then
+        pcall(fs.remove, path)
+        return nil, "download_too_small"
     end
     local valid, head = looks_like_audio(path)
     if not valid then
@@ -662,12 +664,13 @@ local function score_local_file(rel)
     return score
 end
 
-local _soundtrack_cache = {}
+local mem_cache = { soundtrack = {}, khinsider = {}, track_mp3 = {} }
+
 local function pick_soundtrack_track(game_name)
     local target = norm_words(clean_game_name(game_name)):gsub("^%s+", ""):gsub("%s+$", "")
     if #target < 3 then return nil end
     local now = os.time()
-    local cached = _soundtrack_cache[target]
+    local cached = mem_cache.soundtrack[target]
     if cached and (now - cached.ts) < 90 then
         if cached.value == false then return nil end
         return cached.value
@@ -691,7 +694,7 @@ local function pick_soundtrack_track(game_name)
         end
         if found then break end
     end
-    _soundtrack_cache[target] = { value = found or false, ts = now }
+    mem_cache.soundtrack[target] = { value = found or false, ts = now }
     return found
 end
 
@@ -788,15 +791,13 @@ local function khinsider_pick_tracks(body)
     return tracks
 end
 
-local _khinsider_cache = {}
-local _track_mp3_cache = {}
 local function khinsider_resolve(game_name, key, exclude_set, dl_base)
     dl_base = dl_base or key
     if not http_available() then return nil, "http_module_missing" end
     local query = tostring(game_name):gsub("\226\132\162", ""):gsub("\194\174", ""):gsub("\194\169", "")
     local now = os.time()
     local album, tracks
-    local cached = _khinsider_cache[query]
+    local cached = mem_cache.khinsider[query]
     if cached and (now - cached.ts) < 180 then
         album, tracks = cached.album, cached.tracks
     else
@@ -808,18 +809,18 @@ local function khinsider_resolve(game_name, key, exclude_set, dl_base)
         if not album_body then return nil, "khinsider_album_failed: " .. tostring(aerr) end
         tracks = khinsider_pick_tracks(album_body)
         if not tracks then return nil, "khinsider_no_tracks" end
-        _khinsider_cache[query] = { album = album, tracks = tracks, ts = now }
+        mem_cache.khinsider[query] = { album = album, tracks = tracks, ts = now }
     end
     local last_err = "khinsider_no_tracks"
     for _, track in ipairs(tracks) do
         local title = track.name .. " (" .. album.title .. ")"
         if not is_excluded(exclude_set, title) then
-            local mp3 = _track_mp3_cache[track.href]
+            local mp3 = mem_cache.track_mp3[track.href]
             if not mp3 then
                 local track_body, terr = khinsider_get(KHINSIDER_BASE .. track.href)
                 if track_body then
                     mp3 = track_body:match('href="(https://[^"]+%.mp3)"')
-                    if mp3 then _track_mp3_cache[track.href] = mp3 end
+                    if mp3 then mem_cache.track_mp3[track.href] = mp3 end
                 else
                     last_err = "khinsider_track_failed: " .. tostring(terr)
                 end
@@ -878,7 +879,7 @@ local function sc_api(path_and_query)
     if not resp or resp.status ~= 200 or not resp.body then
         return nil, "sc_api_failed_" .. tostring(resp and resp.status)
     end
-    return safe_decode(cap_body(resp.body), "sc_api"), nil
+    return safe_decode(cap_body(resp.body)), nil
 end
 
 local function sc_resolve(game_name, key, exclude_set, dl_base)
@@ -913,7 +914,7 @@ local function sc_resolve(game_name, key, exclude_set, dl_base)
             tried = tried + 1
             local sep = c.stream_api:find("?", 1, true) and "&" or "?"
             local resp = http.request(c.stream_api .. sep .. "client_id=" .. tostring(sc_client_id), { user_agent = SC_UA })
-            local meta = (resp and resp.status == 200 and resp.body) and safe_decode(cap_body(resp.body), "sc_meta") or nil
+            local meta = (resp and resp.status == 200 and resp.body) and safe_decode(cap_body(resp.body)) or nil
             if meta and type(meta.url) == "string" then
                 local file, dl_err = download_file(dl_base, "mp3", meta.url, SC_UA)
                 if file then return { file = file, title = c.title }, nil end
@@ -936,6 +937,9 @@ local function resolve_theme(app_id, force_refresh, game_name, exclude)
     if prev and prev ~= "" and prev == key and not is_reroll then
         pcall(os.remove, RESOLVE_MARKER)
         cache[key] = nil
+        mem_cache.soundtrack = {}
+        mem_cache.khinsider = {}
+        mem_cache.track_mp3 = {}
         save_cache()
         resolve_busy = false
         return json.encode({ ok = false, error = "skipped_after_crash" })
@@ -1118,7 +1122,7 @@ function clear_custom_music(app_id)
 end
 
 function get_settings()
-    local fresh = safe_decode(read_file(CONFIG_FILE), "config_reload")
+    local fresh = safe_decode(read_file(CONFIG_FILE))
     if type(fresh) == "table" then settings = merge_defaults(fresh, DEFAULT_SETTINGS) end
     return json.encode(settings)
 end
@@ -1167,6 +1171,9 @@ function clear_audio_cache()
             for _, e in ipairs(AUDIO_EXTS) do pcall(fs.remove, join(AUDIO_DIR, tostring(key) .. "." .. e)) end
         end
         cache = {}
+        mem_cache.soundtrack = {}
+        mem_cache.khinsider = {}
+        mem_cache.track_mp3 = {}
         save_cache()
         return json.encode({ ok = true, removed = removed })
     end)
@@ -1210,10 +1217,6 @@ function clear_cache_for(app_id)
     end)
     if not ok then logger:warn("clear_cache_for crashed: " .. tostring(result)); return json.encode({ ok = false, error = "internal_error" }) end
     return result
-end
-
-function log_frontend(message)
-    return json.encode({ ok = true })
 end
 
 local function on_load()

@@ -108,7 +108,7 @@ const LibraryModal: React.FC<LibraryModalProps> = ({ onClose, onChanged }) => {
       const data = await readFileBase64(file);
       const resp = await uploadCustomMusic(app.appid, app.name, file.name, data);
       if (!resp?.ok) { setError(`Couldn't set music: ${resp?.error ?? 'unknown error'}.`); return; }
-      commit({ ...customMap, [String(app.appid)]: { title: file.name.replace(/\.[^.]+$/, ''), name: app.name } });
+      commit({ ...customMapRef.current, [String(app.appid)]: { title: file.name.replace(/\.[^.]+$/, ''), name: app.name } });
       void reapplyForApp(app.appid);
     } catch (e) {
       warn('set custom failed', e);
