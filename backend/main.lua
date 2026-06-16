@@ -933,6 +933,9 @@ local function resolve_theme(app_id, force_refresh, game_name, exclude)
     if prev and prev ~= "" and prev == key and not is_reroll then
         pcall(os.remove, RESOLVE_MARKER)
         cache[key] = nil
+        mem_cache.soundtrack = {}
+        mem_cache.khinsider = {}
+        mem_cache.track_mp3 = {}
         save_cache()
         resolve_busy = false
         return json.encode({ ok = false, error = "skipped_after_crash" })
