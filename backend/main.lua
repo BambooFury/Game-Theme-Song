@@ -557,6 +557,10 @@ local function download_file(key, ext, url, ua)
         local detail = err or (result and ("status_" .. tostring(result.status))) or "unknown"
         return nil, "download_failed: " .. tostring(detail)
     end
+    if (result.bytes_written or 0) < 16384 then
+        pcall(fs.remove, path)
+        return nil, "download_too_small"
+    end
     local valid, head = looks_like_audio(path)
     if not valid then
         pcall(fs.remove, path)
