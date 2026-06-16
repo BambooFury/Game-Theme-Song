@@ -662,12 +662,13 @@ local function score_local_file(rel)
     return score
 end
 
-local _soundtrack_cache = {}
+local mem_cache = { soundtrack = {}, khinsider = {}, track_mp3 = {} }
+
 local function pick_soundtrack_track(game_name)
     local target = norm_words(clean_game_name(game_name)):gsub("^%s+", ""):gsub("%s+$", "")
     if #target < 3 then return nil end
     local now = os.time()
-    local cached = _soundtrack_cache[target]
+    local cached = mem_cache.soundtrack[target]
     if cached and (now - cached.ts) < 90 then
         if cached.value == false then return nil end
         return cached.value
@@ -691,7 +692,7 @@ local function pick_soundtrack_track(game_name)
         end
         if found then break end
     end
-    _soundtrack_cache[target] = { value = found or false, ts = now }
+    mem_cache.soundtrack[target] = { value = found or false, ts = now }
     return found
 end
 
@@ -788,15 +789,13 @@ local function khinsider_pick_tracks(body)
     return tracks
 end
 
-local _khinsider_cache = {}
-local _track_mp3_cache = {}
 local function khinsider_resolve(game_name, key, exclude_set, dl_base)
     dl_base = dl_base or key
     if not http_available() then return nil, "http_module_missing" end
     local query = tostring(game_name):gsub("\226\132\162", ""):gsub("\194\174", ""):gsub("\194\169", "")
     local now = os.time()
     local album, tracks
-    local cached = _khinsider_cache[query]
+    local cached = mem_cache.khinsider[query]
     if cached and (now - cached.ts) < 180 then
         album, tracks = cached.album, cached.tracks
     else
@@ -808,18 +807,18 @@ local function khinsider_resolve(game_name, key, exclude_set, dl_base)
         if not album_body then return nil, "khinsider_album_failed: " .. tostring(aerr) end
         tracks = khinsider_pick_tracks(album_body)
         if not tracks then return nil, "khinsider_no_tracks" end
-        _khinsider_cache[query] = { album = album, tracks = tracks, ts = now }
+        mem_cache.khinsider[query] = { album = album, tracks = tracks, ts = now }
     end
     local last_err = "khinsider_no_tracks"
     for _, track in ipairs(tracks) do
         local title = track.name .. " (" .. album.title .. ")"
         if not is_excluded(exclude_set, title) then
-            local mp3 = _track_mp3_cache[track.href]
+            local mp3 = mem_cache.track_mp3[track.href]
             if not mp3 then
                 local track_body, terr = khinsider_get(KHINSIDER_BASE .. track.href)
                 if track_body then
                     mp3 = track_body:match('href="(https://[^"]+%.mp3)"')
-                    if mp3 then _track_mp3_cache[track.href] = mp3 end
+                    if mp3 then mem_cache.track_mp3[track.href] = mp3 end
                 else
                     last_err = "khinsider_track_failed: " .. tostring(terr)
                 end
@@ -1167,6 +1166,9 @@ function clear_audio_cache()
             for _, e in ipairs(AUDIO_EXTS) do pcall(fs.remove, join(AUDIO_DIR, tostring(key) .. "." .. e)) end
         end
         cache = {}
+        mem_cache.soundtrack = {}
+        mem_cache.khinsider = {}
+        mem_cache.track_mp3 = {}
         save_cache()
         return json.encode({ ok = true, removed = removed })
     end)
