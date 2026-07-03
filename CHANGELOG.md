@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.6.0](https://github.com/BambooFury/Game-Theme-Song/compare/v1.5.0...v1.6.0) (2026-07-03)
+
+
+### Features
+
+* per-game ignore button in custom music library ([bc6b6f2](https://github.com/BambooFury/Game-Theme-Song/commit/bc6b6f2bb06e165562ae0377deff02188d5888ee))
+
+
+### Bug Fixes
+
+* disable LuaJIT to prevent EXCEPTION_ACCESS_VIOLATION crash in millennium.luavm64 ([e3defc1](https://github.com/BambooFury/Game-Theme-Song/commit/e3defc1ee7968245f0ca6b08d7eea6c0f76fda7e))
+
+
+### Maintenance
+
+* remove music icon from plugin settings entry ([398b737](https://github.com/BambooFury/Game-Theme-Song/commit/398b7377da8cc66b94d5c03b0b51743b88d00ed8))
+* remove tooltip from mute button ([a3041e1](https://github.com/BambooFury/Game-Theme-Song/commit/a3041e1efaeb8066c281e22fe59ebfde39f72d2c))
+
 ## [1.5.0](https://github.com/BambooFury/Game-Theme-Song/compare/v1.4.8...v1.5.0) (2026-07-03)
 
 
