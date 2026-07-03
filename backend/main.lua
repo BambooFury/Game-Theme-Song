@@ -5,6 +5,9 @@ local ok_fs, fs = pcall(require, "fs"); if not ok_fs then fs = nil end
 local ok_utils, utils = pcall(require, "utils"); if not ok_utils then utils = nil end
 local ok_http, http = pcall(require, "http"); if not ok_http then http = nil end
 
+collectgarbage("setpause", 120)
+collectgarbage("setstepmul", 300)
+
 local function resolve_plugin_dir()
     local source = debug.getinfo(1, "S").source or ""
     if source:sub(1, 1) == "@" then source = source:sub(2) end
@@ -1062,6 +1065,8 @@ return json.encode({ ok = false, error = err_code })
     end)
     pcall(os.remove, RESOLVE_MARKER)
     resolve_busy = false
+    collectgarbage("collect")
+    collectgarbage("collect")
     if not ok then logger:warn("resolve_theme crashed: " .. tostring(result)); return json.encode({ ok = false, error = "internal_error" }) end
     return result
 end
@@ -1174,6 +1179,8 @@ function set_custom_music_finish(app_id, ext, name_b64, title_b64)
         upload_sessions[key] = nil
         return store_custom(app_id, nil, nil, nil, data, ext, title_b64, name_b64)
     end)
+    collectgarbage("collect")
+    collectgarbage("collect")
     if not ok then logger:warn("set_custom_music_finish crashed: " .. tostring(result)); return json.encode({ ok = false, error = "internal_error" }) end
     return result
 end
