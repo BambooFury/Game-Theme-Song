@@ -380,10 +380,9 @@ async function playForApp(appId: number) {
     if (!name) { warn('no name for', appId); return; }
     currentGameName = name;
 
-        let searchingShown = false;
-    const searchingTimer = setTimeout(() => {
-      if (mySeq === activeSeq) { searchingShown = true; setToast('searching', null); }
-    }, 350);
+        const searchingTimer = setTimeout(() => {
+  if (mySeq === activeSeq) setToast('searching', null);
+}, 350);
 
     const { ok, title, url, cached } = await resolveAndPlay(appId, name, mySeq, getSeq, []);
     clearTimeout(searchingTimer);
