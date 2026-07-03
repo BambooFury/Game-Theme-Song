@@ -11,7 +11,7 @@ const DEFAULTS: Settings = {
   max_seconds: 0,
   stop_on_launch: true,
   manual_search: true,
-  confirm_before_download: false,
+  confirm_before_download: true,
 };
 
 export const state: { settings: Settings } = { settings: { ...DEFAULTS } };

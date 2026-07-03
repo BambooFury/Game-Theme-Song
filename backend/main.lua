@@ -37,7 +37,7 @@ local RESOLVE_MARKER = join(PLUGIN_DIR, "resolve.lock")
 local BOOT_MARKER = join(PLUGIN_DIR, "boot.lock")
 local AUDIO_DIR = join(norm_path(millennium.steam_path()), "steamui", "game_theme_song")
 local LOOPBACK_BASE = "https://steamloopback.host/game_theme_song/"
-local CONFIG_VERSION = 13
+local CONFIG_VERSION = 14
 
 local DEFAULT_SETTINGS = {
     config_version = CONFIG_VERSION,
@@ -49,7 +49,7 @@ local DEFAULT_SETTINGS = {
     max_seconds = 0,
     stop_on_launch = true,
     manual_search = true,
-    confirm_before_download = false,
+    confirm_before_download = true,
 }
 
 local cache = {}
@@ -318,7 +318,10 @@ local function load_state()
     local ok_s = pcall(function()
         local loaded = safe_decode(read_file(CONFIG_FILE)) or {}
         if type(loaded) ~= "table" then loaded = {} end
-        if (loaded.config_version or 0) < CONFIG_VERSION then loaded.config_version = CONFIG_VERSION end
+        if (loaded.config_version or 0) < 14 then
+    loaded.confirm_before_download = true
+end
+if (loaded.config_version or 0) < CONFIG_VERSION then loaded.config_version = CONFIG_VERSION end
         settings = merge_defaults(loaded, DEFAULT_SETTINGS)
     end)
     if not ok_s or type(settings) ~= "table" then
