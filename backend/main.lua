@@ -37,7 +37,7 @@ local RESOLVE_MARKER = join(PLUGIN_DIR, "resolve.lock")
 local BOOT_MARKER = join(PLUGIN_DIR, "boot.lock")
 local AUDIO_DIR = join(norm_path(millennium.steam_path()), "steamui", "game_theme_song")
 local LOOPBACK_BASE = "https://steamloopback.host/game_theme_song/"
-local CONFIG_VERSION = 12
+local CONFIG_VERSION = 13
 
 local DEFAULT_SETTINGS = {
     config_version = CONFIG_VERSION,
@@ -49,6 +49,7 @@ local DEFAULT_SETTINGS = {
     max_seconds = 0,
     stop_on_launch = true,
     manual_search = true,
+    confirm_before_download = false,
 }
 
 local cache = {}
@@ -926,6 +927,20 @@ local function sc_resolve(game_name, key, exclude_set, dl_base)
 end
 
 local resolve_busy = false
+local io_busy = false
+local custom_list_cache = nil
+
+local function run_io(name, fn)
+  if io_busy or resolve_busy then return json.encode({ ok = false, error = "busy" }) end
+  io_busy = true
+  local ok, res = pcall(fn)
+  io_busy = false
+  if not ok then
+    logger:warn(name .. " failed: " .. tostring(res))
+    return json.encode({ ok = false, error = "internal_error" })
+  end
+  return res
+end
 
 local function resolve_theme(app_id, force_refresh, game_name, exclude)
     if resolve_busy then return json.encode({ ok = false, error = "busy" }) end
@@ -1030,19 +1045,19 @@ local function custom_ext(filename)
 end
 
 function get_custom_list()
-    local ok, result = pcall(function()
-        local items, count = {}, 0
-        for key, entry in pairs(custom) do
-            if entry and entry.file and fs and fs.exists and fs.exists(join(AUDIO_DIR, entry.file)) then
-                items[tostring(key)] = { title_b64 = base64_encode(sanitize_text(entry.title or "")), name_b64 = base64_encode(sanitize_text(entry.name or "")) }
-                count = count + 1
-                if count >= MAX_LIST_ITEMS then break end
-            end
-        end
-        return json.encode({ ok = true, items = items })
-    end)
-    if not ok then logger:warn("get_custom_list crashed: " .. tostring(result)); return json.encode({ ok = false, error = "internal_error" }) end
-    return result
+  return run_io("get_custom_list", function()
+    if custom_list_cache then return custom_list_cache end
+    local items, count = {}, 0
+    for key, entry in pairs(custom) do
+      if entry and entry.file and fs and fs.exists and fs.exists(join(AUDIO_DIR, entry.file)) then
+        items[tostring(key)] = { title = sanitize_text(entry.title or ""), name = sanitize_text(entry.name or "") }
+        count = count + 1
+        if count >= MAX_LIST_ITEMS then break end
+      end
+    end
+    custom_list_cache = json.encode({ ok = true, items = items })
+    return custom_list_cache
+  end)
 end
 
 local upload_sessions = {}
@@ -1071,7 +1086,9 @@ local function store_custom(app_id, game_name, filename, title, data, ext_hint, 
     resolved_name = sanitize_text(resolved_name or "")
     local ts = os.time()
     custom[key] = { file = fname, title = clean_title, name = resolved_name or "", ts = ts }
+    custom[key] = { file = fname, title = clean_title, name = resolved_name or "", ts = ts }
     save_custom()
+    custom_list_cache = nil
     local url = LOOPBACK_BASE .. fname .. "?v=" .. tostring(ts)
     return json.encode({ ok = true, url = url })
 end
@@ -1115,6 +1132,9 @@ function clear_custom_music(app_id)
         end
         custom[key] = nil
         save_custom()
+        custom[key] = nil
+    save_custom()
+    custom_list_cache = nil
         return json.encode({ ok = true })
     end)
     if not ok then logger:warn("clear_custom_music crashed: " .. tostring(result)); return json.encode({ ok = false, error = "internal_error" }) end
@@ -1143,21 +1163,19 @@ local function file_size(path)
 end
 
 function get_cache_info()
-    local ok, result = pcall(function()
-        local count, bytes = 0, 0
-        for _, entry in pairs(cache) do
-            if entry and entry.file then
-                local path = join(AUDIO_DIR, entry.file)
-                if fs and fs.exists and fs.exists(path) then
-                    count = count + 1
-                    bytes = bytes + file_size(path)
-                end
-            end
+  return run_io("get_cache_info", function()
+    local count, bytes = 0, 0
+    for _, entry in pairs(cache) do
+      if entry and entry.file then
+        local path = join(AUDIO_DIR, entry.file)
+        if fs and fs.exists and fs.exists(path) then
+          count = count + 1
+          bytes = bytes + file_size(path)
         end
-        return json.encode({ ok = true, count = count, bytes = bytes })
-    end)
-    if not ok then logger:warn("get_cache_info crashed: " .. tostring(result)); return json.encode({ ok = false, error = "internal_error" }) end
-    return result
+      end
+    end
+    return json.encode({ ok = true, count = count, bytes = bytes })
+  end)
 end
 
 function clear_audio_cache()
@@ -1182,22 +1200,20 @@ function clear_audio_cache()
 end
 
 function get_cache_list()
-    local ok, result = pcall(function()
-        local items, count = {}, 0
-        for key, entry in pairs(cache) do
-            if entry and entry.file then
-                local path = join(AUDIO_DIR, entry.file)
-                if fs and fs.exists and fs.exists(path) then
-                    items[tostring(key)] = { title_b64 = base64_encode(sanitize_text(entry.title or "")), bytes = file_size(path), ts = entry.ts or 0 }
-                    count = count + 1
-                    if count >= MAX_LIST_ITEMS then break end
-                end
-            end
+  return run_io("get_cache_list", function()
+    local items, count = {}, 0
+    for key, entry in pairs(cache) do
+      if entry and entry.file then
+        local path = join(AUDIO_DIR, entry.file)
+        if fs and fs.exists and fs.exists(path) then
+          items[tostring(key)] = { title = sanitize_text(entry.title or ""), bytes = file_size(path), ts = entry.ts or 0 }
+          count = count + 1
+          if count >= MAX_LIST_ITEMS then break end
         end
-        return json.encode({ ok = true, items = items })
-    end)
-    if not ok then logger:warn("get_cache_list crashed: " .. tostring(result)); return json.encode({ ok = false, error = "internal_error" }) end
-    return result
+      end
+    end
+    return json.encode({ ok = true, items = items })
+  end)
 end
 
 function clear_cache_for(app_id)

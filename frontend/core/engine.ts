@@ -11,6 +11,7 @@ const DEFAULTS: Settings = {
   max_seconds: 0,
   stop_on_launch: true,
   manual_search: true,
+  confirm_before_download: false,
 };
 
 export const state: { settings: Settings } = { settings: { ...DEFAULTS } };
@@ -279,7 +280,21 @@ async function runReroll(): Promise<void> {
   }
 }
 
+let pendingConfirmAppId: number | null = null;
+
+function confirmModeOn(): boolean {
+  return state.settings.manual_search && state.settings.confirm_before_download;
+}
+
+function discardPending(keepAppId: number | null = null) {
+  const id = pendingConfirmAppId;
+  if (id == null || id === keepAppId) return;
+  pendingConfirmAppId = null;
+  void invalidateAudio({ app_id: id }).catch((e) => warn('failed to discard pending song', e));
+}
+
 export function acceptCurrent(): void {
+  pendingConfirmAppId = null;
   setToast('off');
 }
 
@@ -374,10 +389,11 @@ async function playForApp(appId: number) {
     clearTimeout(searchingTimer);
     if (mySeq !== activeSeq) return;
     if (ok) {
-      currentTitle = title;
-      currentUrl = url;
-      if (!state.settings.manual_search) setToast('off');
-      else setToast('ready', title);
+    currentTitle = title;
+    currentUrl = url;
+    if (confirmModeOn() && !cached) pendingConfirmAppId = appId;
+    if (!state.settings.manual_search) setToast('off');
+    else setToast('ready', title);
     } else {
       setToast('off');
     }
@@ -441,6 +457,7 @@ function pollOnce() {
     navDebounceTimer = null;
     const finalId = detectAppId();
     if (finalId === currentAppId) return;
+    discardPending(finalId);
     stopAudio();
     if (finalId === null) { currentAppId = null; setToast('off'); }
     else void playForApp(finalId);

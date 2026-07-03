@@ -12,6 +12,7 @@ export const SettingsContent: React.FC = () => {
   const [maxSec, setMaxSec] = useState(state.settings.max_seconds);
   const [stopOnLaunch, setStopOnLaunch] = useState(state.settings.stop_on_launch);
   const [manualSearch, setManualSearch] = useState(state.settings.manual_search);
+  const [confirmDl, setConfirmDl] = useState(state.settings.confirm_before_download);
   const [cacheCount, setCacheCount] = useState<number | null>(null);
   const [cacheBytes, setCacheBytes] = useState(0);
   const [customCount, setCustomCount] = useState<number | null>(getCustomCount());
@@ -52,6 +53,7 @@ export const SettingsContent: React.FC = () => {
           setMaxSec(state.settings.max_seconds);
           setStopOnLaunch(state.settings.stop_on_launch);
           setManualSearch(state.settings.manual_search);
+          setConfirmDl(state.settings.confirm_before_download);
           const a = getAudioEl();
           if (a) a.volume = state.settings.volume;
         }
@@ -90,6 +92,11 @@ export const SettingsContent: React.FC = () => {
     setManualSearch(checked);
     state.settings.manual_search = checked;
     void setBackendSetting({ key: 'manual_search', value: checked }).catch(e => warn('save manual_search failed', e));
+  };
+  const onConfirmDl = (checked: boolean) => {
+    setConfirmDl(checked);
+    state.settings.confirm_before_download = checked;
+    void setBackendSetting({ key: 'confirm_before_download', value: checked }).catch(e => warn('save confirm_before_download failed', e));
   };
   return (
     <>
@@ -148,6 +155,15 @@ export const SettingsContent: React.FC = () => {
         : 'Classic mode — just play the first theme found, no buttons to switch.'}
       checked={manualSearch}
       onChange={onManualSearch}
+    />
+    <ToggleRow
+      icon={SETTINGS_ICONS.search}
+      title="Keep songs only after ✓"
+      description={confirmDl
+        ? 'A found song is deleted if you leave the page without pressing ✓.'
+        : 'Every found song stays in the download cache automatically.'}
+      checked={confirmDl}
+      onChange={onConfirmDl}
     />
     <ToggleRow
       icon={SETTINGS_ICONS.gamepad}
