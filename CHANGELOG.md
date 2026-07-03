@@ -1,5 +1,58 @@
 # Changelog
 
+## [1.5.0](https://github.com/BambooFury/Game-Theme-Song/compare/v1.4.8...v1.5.0) (2026-07-03)
+
+
+### Features
+
+* keep downloaded songs only after confirming with the check button ([5918c9c](https://github.com/BambooFury/Game-Theme-Song/commit/5918c9c37a1270c15a7b57d13ba0dab523b99662))
+
+
+### Bug Fixes
+
+* allow searching another song when a cached theme plays ([ffc17a9](https://github.com/BambooFury/Game-Theme-Song/commit/ffc17a9152e3a79fc9c3d3b4a2f31a90d184e90e))
+* clean up reroll slot files when invalidating or clearing cache ([c7e5029](https://github.com/BambooFury/Game-Theme-Song/commit/c7e5029b033974345953b3ac2460331bc7b0325e))
+* do not reset cache counter when backend is busy ([1f31167](https://github.com/BambooFury/Game-Theme-Song/commit/1f3116724bcfd1e4ad29b04e1e45f8701851ff4e))
+* don't start theme music when a game is launched from desktop ([f603af6](https://github.com/BambooFury/Game-Theme-Song/commit/f603af6211add0c2226d91ba747a442782fb6ab5))
+* enable confirm-before-download by default ([417c295](https://github.com/BambooFury/Game-Theme-Song/commit/417c295c58502348cc43ebf30493e61f53aefa76))
+* hide search toast when a custom track is playing ([9c1e988](https://github.com/BambooFury/Game-Theme-Song/commit/9c1e988c440167bf79df48e465f06cbc4ad0031c))
+* hide unconfirmed pending track from Downloaded music window ([a4cc4b3](https://github.com/BambooFury/Game-Theme-Song/commit/a4cc4b37720c63bcc42534b2f1fcdb5a2cd5cc6d))
+* keep custom music modal open while native file picker is active ([94db565](https://github.com/BambooFury/Game-Theme-Song/commit/94db56526ffbf6380501b4d2cf6dcab846173616))
+* mark rerolled track as pending so it is discarded without confirmation ([03c263b](https://github.com/BambooFury/Game-Theme-Song/commit/03c263b08123c2399cee3df2511332c9f93a3b88))
+* recognize M4A and WebM signatures in audio validation ([832179c](https://github.com/BambooFury/Game-Theme-Song/commit/832179cb88695a9e7610aca262a12a22543fba72))
+* remove empty header row from features table ([308260a](https://github.com/BambooFury/Game-Theme-Song/commit/308260ab388ba57e132c95ae99fc9d80111f7337))
+* remove opposite slot file after successful reroll download ([c157bad](https://github.com/BambooFury/Game-Theme-Song/commit/c157bad4aa9358eaa9a7cc7d7b9d84705c158d6a))
+* remove unused searchingShown variable that broke prod build ([89bfbdf](https://github.com/BambooFury/Game-Theme-Song/commit/89bfbdfccf137c7bfb1c20efcdd94989d237a3d8))
+* replace features markdown table with HTML to remove empty header row ([7c781ad](https://github.com/BambooFury/Game-Theme-Song/commit/7c781ad8a451f33f1d31b8e837382f0ee68cb222))
+* restore cache lookup lost when adding not_found TTL ([b99e4b0](https://github.com/BambooFury/Game-Theme-Song/commit/b99e4b0199a4b775fabe8a742497514cae32b435))
+* retry theme resolution when backend is busy ([15a7125](https://github.com/BambooFury/Game-Theme-Song/commit/15a7125e665a8d1ab93d60cab0ee0fe90ef325aa))
+* the bug with game music caching. ([e160ca8](https://github.com/BambooFury/Game-Theme-Song/commit/e160ca87bfce2837fd066774ceab39b63b385a78))
+* update Readme.md ([d26d7cc](https://github.com/BambooFury/Game-Theme-Song/commit/d26d7ccf48259f50dcbbdcb5d3186c34f43943be))
+* write state files atomically to prevent corruption ([ecedd43](https://github.com/BambooFury/Game-Theme-Song/commit/ecedd43abe2b0004210a7919cb2a21f1f9838754))
+
+
+### Performance
+
+* cache failed theme lookups to avoid repeated searches ([ea25723](https://github.com/BambooFury/Game-Theme-Song/commit/ea25723e80df3664cab7162248e7fa381c1bbea7))
+* eliminate double JSON sanitization and redundant string copies ([77dc9c2](https://github.com/BambooFury/Game-Theme-Song/commit/77dc9c2bb250d054191226d1223d426fa7e55244))
+* force full GC after heavy operations and tune GC aggressiveness ([e4a2197](https://github.com/BambooFury/Game-Theme-Song/commit/e4a219775e8a4ba8e0cc35167c2aa7f6e5b04caf))
+* read cache sizes with a single directory listing ([0f12413](https://github.com/BambooFury/Game-Theme-Song/commit/0f12413e0fe7d69c24c07bebf151e4b98260416c))
+* rewrite to_valid_utf8 with zero-alloc fast path for valid strings ([1294558](https://github.com/BambooFury/Game-Theme-Song/commit/12945585bd78cc923be33718e0114736249f72ef))
+* use index cursor instead of table.remove in directory scan ([c629820](https://github.com/BambooFury/Game-Theme-Song/commit/c62982006b7603286c24357e5868bcdd86559189))
+* use larger chunks for custom music upload ([7c994f1](https://github.com/BambooFury/Game-Theme-Song/commit/7c994f1e4dc8be44338782d6ce8c5c5482d7bf92))
+
+
+### Refactoring
+
+* migrate settings to native Millennium UI components ([5a4a333](https://github.com/BambooFury/Game-Theme-Song/commit/5a4a3339971588e4a180af7558f22a878f57ca01))
+* migrate settings to native Millennium UI components ([14ab318](https://github.com/BambooFury/Game-Theme-Song/commit/14ab318d9eeead875a5292699ac6a80a298e0f63))
+* use native Steam modals for library and cache windows ([6328db7](https://github.com/BambooFury/Game-Theme-Song/commit/6328db7026d163bbed61c7654f52c68e8477fe9e))
+
+
+### Maintenance
+
+* remove duplicated lines in store_custom and clear_custom_music ([a088cc3](https://github.com/BambooFury/Game-Theme-Song/commit/a088cc327501bf4ffbcd270669d1b2bcdc71a249))
+
 ## [1.4.8](https://github.com/BambooFury/Game-Theme-Song/compare/v1.4.7...v1.4.8) (2026-06-16)
 
 
