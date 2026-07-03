@@ -220,6 +220,7 @@ async function resolveAndPlay(
     return { ok: false, title: null, url: null, cached: false };
   }
 
+  if (shouldSuppressPlayback(appId)) return { ok: false, title: null, url: null, cached: false };
   const ok = await playUrl(resp.url, mySeq, getSeq);
   if (ok || mySeq !== getSeq()) return { ok, title: resp.title ?? null, url: ok ? resp.url : null, cached: !!resp.cached };
 
@@ -350,6 +351,7 @@ async function playForApp(appId: number) {
   let mySeq = -1;
   try {
     if (!state.settings.enabled) return;
+    if (shouldSuppressPlayback(appId)) return;
     if (currentAppId === appId && audioEl && !audioEl.paused) return;
     currentAppId = appId;
     mySeq = ++activeSeq;
@@ -454,6 +456,41 @@ export function startPolling() {
 }
 
 let launchHook: { unregister?: () => void } | null = null;
+let lifetimeHook: { unregister?: () => void } | null = null;
+
+const LAUNCH_SUPPRESS_MS = 15000;
+const runningApps = new Set<number>();
+let recentLaunchAppId: number | null = null;
+let recentLaunchUntil = 0;
+
+function parseLaunchAppId(...args: unknown[]): number | null {
+  for (const a of args) {
+    const n = Number(String(a ?? ''));
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return null;
+}
+
+function isAppRunningInStore(appId: number): boolean {
+  try {
+    const o = (window as any).appStore?.GetAppOverviewByAppID?.(appId);
+    if (o?.BIsAppRunning?.() || o?.running) return true;
+  } catch {}
+  return false;
+}
+
+function shouldSuppressPlayback(appId: number): boolean {
+  if (!state.settings.stop_on_launch) return false;
+  if (runningApps.has(appId)) return true;
+  if (recentLaunchAppId === appId && Date.now() < recentLaunchUntil) return true;
+  return isAppRunningInStore(appId);
+}
+
+function haltPlayback() {
+  ++activeSeq;
+  stopAudio(0.4);
+  setToast('off');
+}
 
 export function registerLaunchStop() {
   try {
@@ -462,16 +499,36 @@ export function registerLaunchStop() {
       warn('RegisterForGameActionStart unavailable');
       return;
     }
-    launchHook = sc.Apps.RegisterForGameActionStart(() => {
-      if (state.settings.stop_on_launch) stopAudio(0.4);
+    launchHook = sc.Apps.RegisterForGameActionStart((_actionType: unknown, strAppId?: unknown) => {
+      recentLaunchAppId = parseLaunchAppId(strAppId);
+      recentLaunchUntil = Date.now() + LAUNCH_SUPPRESS_MS;
+      if (state.settings.stop_on_launch) haltPlayback();
     });
   } catch (e) {
     warn('failed to register launch listener', e);
+  }
+  try {
+    const gs = (window as any).SteamClient?.GameSessions;
+    if (gs?.RegisterForAppLifetimeNotifications) {
+      lifetimeHook = gs.RegisterForAppLifetimeNotifications((n: any) => {
+        const id = Number(n?.unAppID ?? n?.appid ?? 0);
+        if (!Number.isFinite(id) || id <= 0) return;
+        if (n?.bRunning) {
+          runningApps.add(id);
+          if (state.settings.stop_on_launch && currentAppId === id) haltPlayback();
+        } else {
+          runningApps.delete(id);
+        }
+      });
+    }
+  } catch (e) {
+    warn('failed to register lifetime listener', e);
   }
 }
 
 export function unregisterLaunchStop() {
   launchHook?.unregister?.();
+  lifetimeHook?.unregister?.();
 }
 
 export function resetPlayback() {
