@@ -987,6 +987,7 @@ local function resolve_theme(app_id, force_refresh, game_name, exclude)
             return json.encode({ ok = true, url = url, title = cust.title, cached = true, custom = true })
         end
         
+        local entry = cache[key]
         local NOT_FOUND_TTL = 6 * 3600
 if not force_refresh and not rerolling and entry and entry.not_found then
     if (os.time() - (entry.ts or 0)) < NOT_FOUND_TTL then
