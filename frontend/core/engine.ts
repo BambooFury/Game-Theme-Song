@@ -280,6 +280,7 @@ async function runReroll(): Promise<void> {
     if (ok) {
       currentTitle = title;
       currentUrl = url;
+      if (confirmModeOn()) pendingConfirmAppId = appId;
       setToast('ready', title);
     } else {
       if (currentUrl) await playUrl(currentUrl, mySeq, getSeq);
