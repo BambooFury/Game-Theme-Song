@@ -15,3 +15,5 @@ export const setCustomMusicBegin = callable<[{ app_id: number | string }], strin
 export const setCustomMusicChunk = callable<[{ app_id: number | string; chunk: string }], string>('set_custom_music_chunk');
 export const setCustomMusicFinish = callable<[{ app_id: number | string; ext: string; title_b64: string; name_b64: string }], string>('set_custom_music_finish');
 export const clearCustomMusic = callable<[{ app_id: number | string }], string>('clear_custom_music');
+export const getIgnoredList = callable<NoArgs, string>('get_ignored_list');
+export const setIgnoredBackend = callable<[{ app_id: number | string; value: boolean }], string>('set_ignored');

@@ -1,5 +1,5 @@
 import type { Settings, CacheInfo } from './types';
-import { getThemeAudio, rerollTheme, invalidateAudio, getBackendSettings } from './api';
+import { getThemeAudio, rerollTheme, invalidateAudio, getBackendSettings, getIgnoredList, setIgnoredBackend } from './api';
 import { warn } from './log';
 
 const DEFAULTS: Settings = {
@@ -383,10 +383,50 @@ export function subscribeCacheInfo(fn: (info: CacheInfo) => void): () => void {
   return () => { gCacheInfoListeners = gCacheInfoListeners.filter((x) => x !== fn); };
 }
 
+const ignoredSet = new Set<number>();
+
+export async function loadIgnoredOnce() {
+	try {
+		const raw = await getIgnoredList();
+		const info = typeof raw === 'string' ? JSON.parse(raw) : raw;
+		if (info?.ok && info.items) {
+			ignoredSet.clear();
+			for (const k in info.items) if (info.items[k]) ignoredSet.add(Number(k));
+		}
+	} catch (e) {
+		warn('failed to load ignored list', e);
+	}
+}
+
+export function isAppIgnored(appId: number): boolean {
+	return ignoredSet.has(appId);
+}
+
+export async function setAppIgnored(appId: number, value: boolean): Promise<boolean> {
+	try {
+		const raw = await setIgnoredBackend({ app_id: appId, value });
+		const resp = typeof raw === 'string' ? JSON.parse(raw) : raw;
+		if (!resp?.ok) return false;
+		if (value) ignoredSet.add(appId);
+		else ignoredSet.delete(appId);
+		if (value && currentAppId === appId) {
+			++activeSeq;
+			stopAudio(0.3);
+			setToast('off');
+		}
+		if (!value && currentAppId === appId) void reapplyForApp(appId);
+		return true;
+	} catch (e) {
+		warn('setAppIgnored failed', e);
+		return false;
+	}
+}
+
 async function playForApp(appId: number) {
   let mySeq = -1;
   try {
     if (!state.settings.enabled) return;
+    if (ignoredSet.has(appId)) return;
     if (shouldSuppressPlayback(appId)) return;
     if (currentAppId === appId && audioEl && !audioEl.paused) return;
     if (pendingAppId != null && pendingAppId !== appId) {
