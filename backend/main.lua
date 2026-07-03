@@ -970,7 +970,15 @@ local function resolve_theme(app_id, force_refresh, game_name, exclude)
             local url = LOOPBACK_BASE .. cust.file .. "?v=" .. tostring(cust.ts or 0)
             return json.encode({ ok = true, url = url, title = cust.title, cached = true, custom = true })
         end
-        local entry = cache[key]
+        
+        local NOT_FOUND_TTL = 6 * 3600
+if not force_refresh and not rerolling and entry and entry.not_found then
+    if (os.time() - (entry.ts or 0)) < NOT_FOUND_TTL then
+        return json.encode({ ok = false, error = "not_found_cached" })
+    end
+    cache[key] = nil
+    entry = nil
+end
         if not force_refresh and not rerolling and entry and entry.file and fs and fs.exists and fs.exists(join(AUDIO_DIR, entry.file)) then
             local url = LOOPBACK_BASE .. entry.file .. "?v=" .. tostring(entry.ts or 0)
             return json.encode({ ok = true, url = url, title = entry.title, cached = true })
@@ -997,9 +1005,13 @@ local function resolve_theme(app_id, force_refresh, game_name, exclude)
             end
             if not (r and r.file) then
                 logger:warn("no theme audio for " .. tostring(game_name) .. " (khinsider: " .. tostring(kh_err) .. ", soundcloud: " .. tostring(sc_err) .. ")")
-                local err_code = sc_err or kh_err or "not_found"
-                if rerolling then err_code = "no_alternative" end
-                return json.encode({ ok = false, error = err_code })
+local err_code = sc_err or kh_err or "not_found"
+if rerolling then err_code = "no_alternative" end
+if not rerolling then
+    cache[key] = { not_found = true, ts = os.time() }
+    save_cache()
+end
+return json.encode({ ok = false, error = err_code })
             end
         end
         local ts = os.time()
