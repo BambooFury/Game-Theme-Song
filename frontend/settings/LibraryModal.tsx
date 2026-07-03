@@ -55,7 +55,6 @@ const GameCard = memo(function GameCard({ app, customTitle, busy, ignored, onSet
 				<button
 	type="button"
 	className={'gts-lib-ignore' + (ignored ? ' gts-on' : '')}
-	title={ignored ? 'Music is off for this game — click to enable' : 'Ignore music for this game'}
 	onClick={(e: React.MouseEvent<HTMLButtonElement>) => { e.preventDefault(); e.stopPropagation(); onToggleIgnore(app); }}
 	dangerouslySetInnerHTML={IGNORE_HTML}
 />
