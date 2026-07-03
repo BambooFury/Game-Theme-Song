@@ -1,4 +1,8 @@
-﻿local logger     = require("logger")
+﻿if type(jit) == "table" and type(jit.off) == "function" then
+    pcall(jit.off)
+    pcall(jit.flush)
+end
+local logger     = require("logger")
 local millennium = require("millennium")
 local json       = require("json")
 local ok_fs, fs = pcall(require, "fs"); if not ok_fs then fs = nil end
