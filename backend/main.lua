@@ -1118,7 +1118,6 @@ local function store_custom(app_id, game_name, filename, title, data, ext_hint, 
     resolved_name = sanitize_text(resolved_name or "")
     local ts = os.time()
     custom[key] = { file = fname, title = clean_title, name = resolved_name or "", ts = ts }
-    custom[key] = { file = fname, title = clean_title, name = resolved_name or "", ts = ts }
     save_custom()
     custom_list_cache = nil
     local url = LOOPBACK_BASE .. fname .. "?v=" .. tostring(ts)
@@ -1162,10 +1161,8 @@ function clear_custom_music(app_id)
         if fs and fs.remove then
             for e in pairs(CUSTOM_EXTS) do pcall(fs.remove, join(AUDIO_DIR, "custom_" .. key .. "." .. e)) end
         end
-        custom[key] = nil
-        save_custom()
-        custom[key] = nil
-    save_custom()
+custom[key] = nil
+save_custom()
     custom_list_cache = nil
         return json.encode({ ok = true })
     end)
