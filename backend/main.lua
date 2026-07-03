@@ -1025,8 +1025,11 @@ end
 function invalidate_audio(app_id)
     local key = tostring(app_id)
     if fs and fs.remove then
-        for _, e in ipairs(AUDIO_EXTS) do pcall(fs.remove, join(AUDIO_DIR, key .. "." .. e)) end
+    for _, e in ipairs(AUDIO_EXTS) do
+        pcall(fs.remove, join(AUDIO_DIR, key .. "." .. e))
+        pcall(fs.remove, join(AUDIO_DIR, key .. "_b." .. e))
     end
+end
     cache[key] = nil
     save_cache()
     return json.encode({ ok = true })
@@ -1186,7 +1189,10 @@ function clear_audio_cache()
                 local path = join(AUDIO_DIR, entry.file)
                 if fs and fs.exists and fs.exists(path) and pcall(fs.remove, path) then removed = removed + 1 end
             end
-            for _, e in ipairs(AUDIO_EXTS) do pcall(fs.remove, join(AUDIO_DIR, tostring(key) .. "." .. e)) end
+            for _, e in ipairs(AUDIO_EXTS) do
+    pcall(fs.remove, join(AUDIO_DIR, tostring(key) .. "." .. e))
+    pcall(fs.remove, join(AUDIO_DIR, tostring(key) .. "_b." .. e))
+end
         end
         cache = {}
         mem_cache.soundtrack = {}
@@ -1226,7 +1232,10 @@ function clear_cache_for(app_id)
             if fs and fs.exists and fs.exists(path) then freed = file_size(path) end
             pcall(fs.remove, path)
         end
-        for _, e in ipairs(AUDIO_EXTS) do pcall(fs.remove, join(AUDIO_DIR, key .. "." .. e)) end
+        for _, e in ipairs(AUDIO_EXTS) do
+    pcall(fs.remove, join(AUDIO_DIR, key .. "." .. e))
+    pcall(fs.remove, join(AUDIO_DIR, key .. "_b." .. e))
+end
         cache[key] = nil
         save_cache()
         return json.encode({ ok = true, bytes = freed })
