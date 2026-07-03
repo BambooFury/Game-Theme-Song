@@ -20,12 +20,24 @@ Plays each game's <b>theme music</b> in the background when you open its page in
 
 ## <img src="https://api.iconify.design/lucide:sparkles.svg?color=%23FFD43B" width="20"> Features
 
-| &nbsp; | &nbsp; |
-|---|---|
-| <img src="https://api.iconify.design/lucide:play.svg?color=%231a9fff" width="16"> **Auto-Play** - open a game page and its theme starts playing, no clicks needed | <img src="https://api.iconify.design/lucide:waves.svg?color=%2367c1f5" width="16"> **Smooth Fades** - gentle fade-in/out and cross-fades when you jump between games |
-| <img src="https://api.iconify.design/lucide:search.svg?color=%239E9E9E" width="16"> **Search Indicator** - animated "Searching music…" toast while a theme is being found | <img src="https://api.iconify.design/lucide:zap.svg?color=%23FFD43B" width="16"> **Local Cache** - themes download once, repeat visits start instantly |
-| <img src="https://api.iconify.design/lucide:file-music.svg?color=%2367c1f5" width="16"> **Custom Music** - set your own audio track per game; your pick always overrides the auto-theme | <img src="https://api.iconify.design/lucide:list-music.svg?color=%232ecc71" width="16"> **Music Library** - searchable window listing your games to assign and manage custom tracks |
-| <img src="https://api.iconify.design/lucide:sliders-horizontal.svg?color=%232ecc71" width="16"> **Volume Slider** - 0-100% with 1% precision, applied live while music plays | <img src="https://api.iconify.design/lucide:hand-metal.svg?color=%23ff4d4f" width="16"> **Welcome Tour** - friendly one-time intro window after install |
+<table>
+<tr>
+<td><img src="https://api.iconify.design/lucide:play.svg?color=%231a9fff" width="16"> <b>Auto-Play</b> — open a game page and its theme starts playing, no clicks needed</td>
+<td><img src="https://api.iconify.design/lucide:waves.svg?color=%2367c1f5" width="16"> <b>Smooth Fades</b> — gentle fade-in/out and cross-fades when you jump between games</td>
+</tr>
+<tr>
+<td><img src="https://api.iconify.design/lucide:search.svg?color=%239E9E9E" width="16"> <b>Search Indicator</b> — animated "Searching music…" toast while a theme is being found</td>
+<td><img src="https://api.iconify.design/lucide:zap.svg?color=%23FFD43B" width="16"> <b>Local Cache</b> — themes download once, repeat visits start instantly</td>
+</tr>
+<tr>
+<td><img src="https://api.iconify.design/lucide:file-music.svg?color=%2367c1f5" width="16"> <b>Custom Music</b> — set your own audio track per game; your pick always overrides the auto-theme</td>
+<td><img src="https://api.iconify.design/lucide:list-music.svg?color=%232ecc71" width="16"> <b>Music Library</b> — searchable window listing your games to assign and manage custom tracks</td>
+</tr>
+<tr>
+<td><img src="https://api.iconify.design/lucide:sliders-horizontal.svg?color=%232ecc71" width="16"> <b>Volume Slider</b> — 0–100% with 1% precision, applied live while music plays</td>
+<td><img src="https://api.iconify.design/lucide:hand-metal.svg?color=%23ff4d4f" width="16"> <b>Welcome Tour</b> — friendly one-time intro window after install</td>
+</tr>
+</table>
 
 ## <img src="https://api.iconify.design/lucide:cog.svg?color=%231a9fff" width="20"> How It Works
 
