@@ -1031,7 +1031,9 @@ end
 return json.encode({ ok = false, error = err_code })
             end
         end
-        local ts = os.time()
+            local ts = os.time()
+        local other_base = target_slot == "b" and key or (key .. "_b")
+        for _, e in ipairs(AUDIO_EXTS) do pcall(fs.remove, join(AUDIO_DIR, other_base .. "." .. e)) end
         cache[key] = { file = r.file, title = sanitize_text(r.title), ts = ts, slot = target_slot }
         save_cache()
         local url = LOOPBACK_BASE .. r.file .. "?v=" .. tostring(ts)
