@@ -166,9 +166,13 @@ end
 
 local function presanitize_json(str)
     str = to_valid_utf8(str)
-    str = str:gsub("\\[uU][dD][89aAbBcCdDeEfF]%x%x", "\\uFFFD")
+    if str:find("\\[uU][dD][89aAbBcCdDeEfF]%x%x") then
+        str = str:gsub("\\[uU][dD][89aAbBcCdDeEfF]%x%x", "\\uFFFD")
+    end
     return str
 end
+
+local raw_json_decode = json.decode
 
 local function safe_decode(str)
     if not str or str == "" then return nil end
@@ -176,7 +180,7 @@ local function safe_decode(str)
     if not json_safe_to_decode(str, MAX_JSON_DEPTH) then
         return nil
     end
-    local ok, val = pcall(json.decode, str)
+    local ok, val = pcall(raw_json_decode, str)
     if not ok then
         return nil
     end
@@ -235,10 +239,9 @@ end
 do
     local _encode = json.encode
     json.encode = function(v) return _encode(deep_safe(v, 0)) end
-    local _decode = json.decode
     json.decode = function(s)
         if type(s) == "string" then s = presanitize_json(s) end
-        return _decode(s)
+        return raw_json_decode(s)
     end
 end
 
