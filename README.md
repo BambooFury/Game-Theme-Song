@@ -20,7 +20,7 @@ Plays each game's <b>theme music</b> in the background when you open its page in
 
 ## <img src="https://api.iconify.design/lucide:sparkles.svg?color=%23FFD43B" width="20"> Features
 
-| | |
+| &nbsp; | &nbsp; |
 |---|---|
 | <img src="https://api.iconify.design/lucide:play.svg?color=%231a9fff" width="16"> **Auto-Play** - open a game page and its theme starts playing, no clicks needed | <img src="https://api.iconify.design/lucide:waves.svg?color=%2367c1f5" width="16"> **Smooth Fades** - gentle fade-in/out and cross-fades when you jump between games |
 | <img src="https://api.iconify.design/lucide:search.svg?color=%239E9E9E" width="16"> **Search Indicator** - animated "Searching music…" toast while a theme is being found | <img src="https://api.iconify.design/lucide:zap.svg?color=%23FFD43B" width="16"> **Local Cache** - themes download once, repeat visits start instantly |
