@@ -62,36 +62,56 @@ local MAX_HTTP_BYTES = 3 * 1024 * 1024
 local MAX_TITLE_LEN = 200
 local MAX_LIST_ITEMS = 500
 
-local function to_valid_utf8(s)
-    if type(s) ~= "string" then return s end
-    local out, i, n = {}, 1, #s
-    local repl = "\239\191\189"
+local function utf8_find_invalid(s, start)
+    local i, n = start or 1, #s
+    local byte = string.byte
     while i <= n do
-        local c = s:byte(i)
+        local c = byte(s, i)
         if c < 0x80 then
-            out[#out + 1] = string.char(c); i = i + 1
-        elseif c >= 0xC2 and c <= 0xDF and i + 1 <= n
-                and s:byte(i + 1) >= 0x80 and s:byte(i + 1) <= 0xBF then
-            out[#out + 1] = s:sub(i, i + 1); i = i + 2
-        elseif c >= 0xE0 and c <= 0xEF and i + 2 <= n then
-            local c2, c3 = s:byte(i + 1), s:byte(i + 2)
-            local ok = c2 >= 0x80 and c2 <= 0xBF and c3 >= 0x80 and c3 <= 0xBF
-                and not (c == 0xE0 and c2 < 0xA0)
-                and not (c == 0xED and c2 >= 0xA0)
-            if ok then out[#out + 1] = s:sub(i, i + 2); i = i + 3
-            else out[#out + 1] = repl; i = i + 1 end
-        elseif c >= 0xF0 and c <= 0xF4 and i + 3 <= n then
-            local c2, c3, c4 = s:byte(i + 1), s:byte(i + 2), s:byte(i + 3)
-            local ok = c2 >= 0x80 and c2 <= 0xBF and c3 >= 0x80 and c3 <= 0xBF
-                and c4 >= 0x80 and c4 <= 0xBF
-                and not (c == 0xF0 and c2 < 0x90)
-                and not (c == 0xF4 and c2 > 0x8F)
-            if ok then out[#out + 1] = s:sub(i, i + 3); i = i + 4
-            else out[#out + 1] = repl; i = i + 1 end
+            i = i + 1
+        elseif c >= 0xC2 and c <= 0xDF then
+            local c2 = byte(s, i + 1)
+            if not c2 or c2 < 0x80 or c2 > 0xBF then return i end
+            i = i + 2
+        elseif c >= 0xE0 and c <= 0xEF then
+            local c2, c3 = byte(s, i + 1), byte(s, i + 2)
+            if not c3 or c2 < 0x80 or c2 > 0xBF or c3 < 0x80 or c3 > 0xBF
+                or (c == 0xE0 and c2 < 0xA0) or (c == 0xED and c2 >= 0xA0) then
+                return i
+            end
+            i = i + 3
+        elseif c >= 0xF0 and c <= 0xF4 then
+            local c2, c3, c4 = byte(s, i + 1), byte(s, i + 2), byte(s, i + 3)
+            if not c4 or c2 < 0x80 or c2 > 0xBF or c3 < 0x80 or c3 > 0xBF
+                or c4 < 0x80 or c4 > 0xBF
+                or (c == 0xF0 and c2 < 0x90) or (c == 0xF4 and c2 > 0x8F) then
+                return i
+            end
+            i = i + 4
         else
-            out[#out + 1] = repl; i = i + 1
+            return i
         end
     end
+    return nil
+end
+
+local function to_valid_utf8(s)
+    if type(s) ~= "string" then return s end
+    local bad = utf8_find_invalid(s, 1)
+    if not bad then return s end
+    local out, pos, n = {}, 1, #s
+    local repl = "\239\191\189"
+    while bad do
+        if bad > pos then out[#out + 1] = s:sub(pos, bad - 1) end
+        out[#out + 1] = repl
+        pos = bad + 1
+        if pos > n then
+            bad = nil
+        else
+            bad = utf8_find_invalid(s, pos)
+        end
+    end
+    if pos <= n then out[#out + 1] = s:sub(pos) end
     return table.concat(out)
 end
 
