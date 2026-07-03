@@ -72,7 +72,12 @@ const CacheModal: React.FC<CacheModalProps> = ({ closeModal }) => {
         for (const a of getLibraryApps()) nameById.set(a.appid, a.name);
         const raw = await getCacheList();
         const info = typeof raw === 'string' ? JSON.parse(raw) : raw;
-        if (!info?.ok || !info.items) { setItems([]); return; }
+        if (!info?.ok || !info.items) {
+          if (info?.error === 'busy') setError('Search in progress — try again in a moment.');
+          setItems([]);
+          if (info?.error !== 'busy') broadcast([]);
+          return;
+        }
         const pendingId = getPendingConfirmAppId();
         const list: CacheItem[] = [];
         for (const k in info.items) {
