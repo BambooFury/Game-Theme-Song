@@ -195,6 +195,7 @@ let currentGameName: string | null = null;
 let currentTitle: string | null = null;
 let currentUrl: string | null = null;
 let rerollExclude: string[] = [];
+let pendingAppId: number | null
 
 async function resolveAndPlay(
   appId: number,
@@ -202,6 +203,7 @@ async function resolveAndPlay(
   mySeq: number,
   getSeq: () => number,
   exclude: string[],
+  onResolved?: (cached: boolean) => void,
   ): Promise<{ ok: boolean; title: string | null; url: string | null; cached: boolean; custom: boolean }> {
   const rerolling = exclude.length > 0;
   const excludeArg = JSON.stringify(exclude);
@@ -233,7 +235,7 @@ async function resolveAndPlay(
     warn('no audio for', name, resp?.error);
     return { ok: false, title: null, url: null, cached: false, custom: false };
   }
-
+  onResolved?.(!!resp.cached);
   if (shouldSuppressPlayback(appId)) return { ok: false, title: null, url: null, cached: false, custom: false };
   const ok = await playUrl(resp.url, mySeq, getSeq);
   if (ok || mySeq !== getSeq()) return { ok, title: resp.title ?? null, url: ok ? resp.url : null, cached: !!resp.cached, custom: !!resp.custom };
@@ -277,10 +279,10 @@ async function runReroll(): Promise<void> {
   try {
     const { ok, title, url } = await resolveAndPlay(appId, name, mySeq, getSeq, rerollExclude);
     if (mySeq !== activeSeq) return;
-    if (ok) {
+        if (ok) {
       currentTitle = title;
       currentUrl = url;
-      if (confirmModeOn()) pendingConfirmAppId = appId;
+      pendingConfirmAppId = confirmModeOn() ? appId : null;
       setToast('ready', title);
     } else {
       if (currentUrl) await playUrl(currentUrl, mySeq, getSeq);
@@ -387,6 +389,10 @@ async function playForApp(appId: number) {
     if (!state.settings.enabled) return;
     if (shouldSuppressPlayback(appId)) return;
     if (currentAppId === appId && audioEl && !audioEl.paused) return;
+    if (pendingAppId != null && pendingAppId !== appId) {
+      void invalidateAudio({ app_id: pendingAppId });
+      pendingAppId = null;
+    }
     currentAppId = appId;
     mySeq = ++activeSeq;
     const getSeq = () => activeSeq;
@@ -403,15 +409,21 @@ async function playForApp(appId: number) {
   if (mySeq === activeSeq) setToast('searching', null);
 }, 350);
 
-    const { ok, title, url, cached, custom } = await resolveAndPlay(appId, name, mySeq, getSeq, []);
+        const { ok, title, url, cached } = await resolveAndPlay(appId, name, mySeq, getSeq, [], (isCached) => {
+      if (isCached) {
+        clearTimeout(searchingTimer);
+        if (mySeq === activeSeq) setToast('off');
+      }
+    });
     clearTimeout(searchingTimer);
     if (mySeq !== activeSeq) return;
     if (ok) {
-    currentTitle = title;
-    currentUrl = url;
-    if (confirmModeOn() && !cached && !custom) pendingConfirmAppId = appId;
-if (!state.settings.manual_search || custom) setToast('off');
-else setToast('ready', title);
+      currentTitle = title;
+      currentUrl = url;
+      pendingConfirmAppId = confirmModeOn() && !cached ? appId : null;
+      if (!state.settings.manual_search) setToast('off');
+      else if (cached) setToast('off');
+      else setToast('ready', title);
     } else {
       setToast('off');
     }
@@ -477,7 +489,11 @@ function pollOnce() {
     if (finalId === currentAppId) return;
     discardPending(finalId);
     stopAudio();
-    if (finalId === null) { currentAppId = null; setToast('off'); }
+    if (finalId === null) {
+      if (pendingAppId != null) { void invalidateAudio({ app_id: pendingAppId }); pendingAppId = null; }
+      currentAppId = null;
+      setToast('off');
+    }
     else void playForApp(finalId);
   }, NAV_DEBOUNCE_MS);
 }
