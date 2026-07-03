@@ -365,7 +365,7 @@ async function playForApp(appId: number) {
     if (!name) { warn('no name for', appId); return; }
     currentGameName = name;
 
-    let searchingShown = false;
+        let searchingShown = false;
     const searchingTimer = setTimeout(() => {
       if (mySeq === activeSeq) { searchingShown = true; setToast('searching', null); }
     }, 350);
@@ -377,7 +377,6 @@ async function playForApp(appId: number) {
       currentTitle = title;
       currentUrl = url;
       if (!state.settings.manual_search) setToast('off');
-      else if (cached && !searchingShown) setToast('off');
       else setToast('ready', title);
     } else {
       setToast('off');
