@@ -215,6 +215,19 @@ async function resolveAndPlay(
     warn('backend error', e);
     return { ok: false, title: null, url: null, cached: false, custom: false };
   }
+  if (resp && resp.ok === false && resp.error === 'busy') {
+  await new Promise((r) => setTimeout(r, 1500));
+  if (mySeq !== getSeq()) return { ok: false, title: null, url: null, cached: false, custom: false };
+  try {
+    const raw = rerolling
+      ? await rerollTheme({ app_id: appId, game_name: name, force_refresh: true, exclude: excludeArg })
+      : await getThemeAudio({ app_id: appId, game_name: name, force_refresh: false });
+    resp = typeof raw === 'string' ? JSON.parse(raw) : raw;
+  } catch (e) {
+    warn('backend retry error', e);
+    return { ok: false, title: null, url: null, cached: false, custom: false };
+  }
+}
   if (mySeq !== getSeq()) return { ok: false, title: null, url: null, cached: false, custom: false };
   if (!resp?.ok || !resp.url) {
     warn('no audio for', name, resp?.error);
@@ -234,6 +247,7 @@ async function resolveAndPlay(
 const ok2 = await playUrl(r2.url, mySeq, getSeq);
 return { ok: ok2, title: r2.title ?? null, url: ok2 ? r2.url : null, cached: false, custom: !!r2.custom };
 }
+
 
 const REROLL_DEBOUNCE_MS = 450;
 let rerollDebounceTimer: ReturnType<typeof setTimeout> | null = null;
