@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.6.1](https://github.com/BambooFury/Game-Theme-Song/compare/v1.6.0...v1.6.1) (2026-07-03)
+
+
+### Maintenance
+
+* remove the unnecessary file ([23b31f8](https://github.com/BambooFury/Game-Theme-Song/commit/23b31f8f67c2c7c3ef130a5971d8e4700638edb9))
+* remove the unnecessary file ([f774d40](https://github.com/BambooFury/Game-Theme-Song/commit/f774d40246fc9f575915ca85ae0b267ca51a39c9))
+
 ## [1.6.0](https://github.com/BambooFury/Game-Theme-Song/compare/v1.5.0...v1.6.0) (2026-07-03)
 
 
