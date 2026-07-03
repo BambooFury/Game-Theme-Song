@@ -202,7 +202,7 @@ async function resolveAndPlay(
   mySeq: number,
   getSeq: () => number,
   exclude: string[],
-): Promise<{ ok: boolean; title: string | null; url: string | null; cached: boolean }> {
+  ): Promise<{ ok: boolean; title: string | null; url: string | null; cached: boolean; custom: boolean }> {
   const rerolling = exclude.length > 0;
   const excludeArg = JSON.stringify(exclude);
   let resp: any;
@@ -213,26 +213,26 @@ async function resolveAndPlay(
     resp = typeof raw === 'string' ? JSON.parse(raw) : raw;
   } catch (e) {
     warn('backend error', e);
-    return { ok: false, title: null, url: null, cached: false };
+    return { ok: false, title: null, url: null, cached: false, custom: false };
   }
-  if (mySeq !== getSeq()) return { ok: false, title: null, url: null, cached: false };
+  if (mySeq !== getSeq()) return { ok: false, title: null, url: null, cached: false, custom: false };
   if (!resp?.ok || !resp.url) {
     warn('no audio for', name, resp?.error);
-    return { ok: false, title: null, url: null, cached: false };
+    return { ok: false, title: null, url: null, cached: false, custom: false };
   }
 
-  if (shouldSuppressPlayback(appId)) return { ok: false, title: null, url: null, cached: false };
+  if (shouldSuppressPlayback(appId)) return { ok: false, title: null, url: null, cached: false, custom: false };
   const ok = await playUrl(resp.url, mySeq, getSeq);
-  if (ok || mySeq !== getSeq()) return { ok, title: resp.title ?? null, url: ok ? resp.url : null, cached: !!resp.cached };
+  if (ok || mySeq !== getSeq()) return { ok, title: resp.title ?? null, url: ok ? resp.url : null, cached: !!resp.cached, custom: !!resp.custom };
 
   await invalidateAudio({ app_id: appId });
   const raw2 = rerolling
     ? await rerollTheme({ app_id: appId, game_name: name, force_refresh: true, exclude: excludeArg })
     : await getThemeAudio({ app_id: appId, game_name: name, force_refresh: true });
   const r2 = typeof raw2 === 'string' ? JSON.parse(raw2) : raw2;
-  if (mySeq !== getSeq() || !r2?.ok || !r2.url) return { ok: false, title: null, url: null, cached: false };
-  const ok2 = await playUrl(r2.url, mySeq, getSeq);
-  return { ok: ok2, title: r2.title ?? null, url: ok2 ? r2.url : null, cached: false };
+  if (mySeq !== getSeq() || !r2?.ok || !r2.url) return { ok: false, title: null, url: null, cached: false, custom: false };
+const ok2 = await playUrl(r2.url, mySeq, getSeq);
+return { ok: ok2, title: r2.title ?? null, url: ok2 ? r2.url : null, cached: false, custom: !!r2.custom };
 }
 
 const REROLL_DEBOUNCE_MS = 450;
@@ -384,15 +384,15 @@ async function playForApp(appId: number) {
   if (mySeq === activeSeq) setToast('searching', null);
 }, 350);
 
-    const { ok, title, url, cached } = await resolveAndPlay(appId, name, mySeq, getSeq, []);
+    const { ok, title, url, cached, custom } = await resolveAndPlay(appId, name, mySeq, getSeq, []);
     clearTimeout(searchingTimer);
     if (mySeq !== activeSeq) return;
     if (ok) {
     currentTitle = title;
     currentUrl = url;
-    if (confirmModeOn() && !cached) pendingConfirmAppId = appId;
-    if (!state.settings.manual_search) setToast('off');
-    else setToast('ready', title);
+    if (confirmModeOn() && !cached && !custom) pendingConfirmAppId = appId;
+if (!state.settings.manual_search || custom) setToast('off');
+else setToast('ready', title);
     } else {
       setToast('off');
     }
