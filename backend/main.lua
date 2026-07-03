@@ -281,6 +281,17 @@ local function write_file(path, data)
     return true
 end
 
+local function write_file_atomic(path, data)
+    local tmp = path .. ".tmp"
+    if not write_file(tmp, data) then return false end
+    pcall(os.remove, path)
+    if not os.rename(tmp, path) then
+        pcall(os.remove, tmp)
+        return write_file(path, data)
+    end
+    return true
+end
+
 local function merge_defaults(target, defaults)
     for k, v in pairs(defaults) do
         if target[k] == nil then target[k] = v end
@@ -317,15 +328,15 @@ local function load_state()
 end
 
 local function save_cache()
-    local s = safe_encode(cache); if s then write_file(CACHE_FILE, s) end
+    local s = safe_encode(cache); if s then write_file_atomic(CACHE_FILE, s) end
 end
 
 local function save_settings()
-    local s = safe_encode(settings); if s then write_file(CONFIG_FILE, s) end
+    local s = safe_encode(settings); if s then write_file_atomic(CONFIG_FILE, s) end
 end
 
 local function save_custom()
-    local s = safe_encode(custom); if s then write_file(CUSTOM_FILE, s) end
+    local s = safe_encode(custom); if s then write_file_atomic(CUSTOM_FILE, s) end
 end
 
 local function cleanup_legacy_worker()
@@ -1165,7 +1176,7 @@ end
 function set_setting(key, value)
     if DEFAULT_SETTINGS[key] == nil then return json.encode({ ok = false, error = "unknown_key" }) end
     settings[key] = value
-    if not write_file(CONFIG_FILE, json.encode(settings)) then return json.encode({ ok = false, error = "write_failed" }) end
+    if not write_file_atomic(CONFIG_FILE, json.encode(settings)) then return json.encode({ ok = false, error = "write_failed" }) end
     return json.encode({ ok = true })
 end
 
