@@ -40,6 +40,7 @@ local PLUGIN_DIR = norm_path(resolve_plugin_dir())
 local CACHE_FILE = join(PLUGIN_DIR, "cache.json")
 local CONFIG_FILE = join(PLUGIN_DIR, "settings.json")
 local CUSTOM_FILE = join(PLUGIN_DIR, "custom.json")
+local IGNORE_FILE = join(PLUGIN_DIR, "ignored.json")
 local RESOLVE_MARKER = join(PLUGIN_DIR, "resolve.lock")
 local BOOT_MARKER = join(PLUGIN_DIR, "boot.lock")
 local AUDIO_DIR = join(norm_path(millennium.steam_path()), "steamui", "game_theme_song")
@@ -344,6 +345,10 @@ local function load_state()
         custom = scrub_state(safe_decode(read_file(CUSTOM_FILE)) or {})
     end)
     if not ok_u or type(custom) ~= "table" then custom = {}; pcall(os.remove, CUSTOM_FILE) end
+    local ok_i = pcall(function()
+    ignored = scrub_state(safe_decode(read_file(IGNORE_FILE)) or {})
+end)
+if not ok_i or type(ignored) ~= "table" then ignored = {}; pcall(os.remove, IGNORE_FILE) end
 
     local ok_s = pcall(function()
         local loaded = safe_decode(read_file(CONFIG_FILE)) or {}
@@ -370,6 +375,9 @@ end
 
 local function save_custom()
     local s = safe_encode(custom); if s then write_file_atomic(CUSTOM_FILE, s) end
+end
+local function save_ignored()
+    local s = safe_encode(ignored); if s then write_file_atomic(IGNORE_FILE, s) end
 end
 
 local function cleanup_legacy_worker()
@@ -993,6 +1001,10 @@ local function resolve_theme(app_id, force_refresh, game_name, exclude)
     if resolve_busy then return json.encode({ ok = false, error = "busy" }) end
     resolve_busy = true
     local key = tostring(app_id)
+    if ignored[key] then
+    resolve_busy = false
+    return json.encode({ ok = false, error = "ignored" })
+end
     game_name = native_string(game_name or "", 300)
     local is_reroll = type(exclude) == "string" and exclude ~= ""
     local prev = read_file(RESOLVE_MARKER)
@@ -1125,6 +1137,17 @@ function get_custom_list()
     custom_list_cache = json.encode({ ok = true, items = items })
     return custom_list_cache
   end)
+end
+function get_ignored_list()
+    return json.encode({ ok = true, items = ignored })
+end
+
+function set_ignored(app_id, value)
+    local key = tostring(app_id)
+    if key == "" or key == "nil" then return json.encode({ ok = false, error = "missing_app_id" }) end
+    if value then ignored[key] = true else ignored[key] = nil end
+    save_ignored()
+    return json.encode({ ok = true })
 end
 
 local upload_sessions = {}
@@ -1346,6 +1369,7 @@ local function on_unload()
     pcall(save_cache)
     pcall(save_settings)
     pcall(save_custom)
+    pcall(save_ignored)
 end
 
 return { on_load = on_load, on_unload = on_unload }
