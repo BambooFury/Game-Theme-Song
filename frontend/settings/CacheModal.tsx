@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, memo } from 'react';
 import { SETTINGS_CSS, SETTINGS_ICONS } from '../_assets.generated';
 import { warn } from '../core/log';
-import { base64ToUtf8 } from '../core/base64';
 import { getCacheList, clearCacheFor, clearAudioCache } from '../core/api';
 import { stopAudio, getCurrentAppId, resetPlayback, setGlobalCacheInfo, getCacheWindowOpen, setCacheWindowOpen, subscribeCacheWindow } from '../core/engine';
 import type { CacheItem } from '../core/types';
@@ -65,7 +64,7 @@ const CacheModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         for (const k in info.items) {
           const it = info.items[k] || {};
           const appid = Number(k);
-          list.push({ appid, name: nameById.get(appid) ?? `App ${appid}`, title: base64ToUtf8(it.title_b64 ?? ''), bytes: Number(it.bytes ?? 0) });
+          list.push({ appid, name: nameById.get(appid) ?? `App ${appid}`, title: it.title ?? '', bytes: Number(it.bytes ?? 0) });
         }
         list.sort((a, b) => a.name.localeCompare(b.name));
         setItems(list);
