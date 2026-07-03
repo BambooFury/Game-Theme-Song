@@ -1,19 +1,20 @@
 import { warn } from '../core/log';
-import { base64ToUtf8, utf8ToBase64 } from '../core/base64';
+import { utf8ToBase64 } from '../core/base64';
 import { setCustomMusicBegin, setCustomMusicChunk, setCustomMusicFinish } from '../core/api';
 import type { LibApp, CustomMap } from '../core/types';
+
 
 export const ACCEPT_EXTS = '.mp3,.m4a,.aac,.ogg,.oga,.opus,.webm,.wav,.flac,audio/*';
 export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
 export const MAX_CARDS = 200;
 
-const UPLOAD_CHUNK = 128 * 1024;
+const UPLOAD_CHUNK = 512 * 1024;
 
-export function decodeCustomItems(items: Record<string, { title_b64?: string; name_b64?: string }>): CustomMap {
+export function decodeCustomItems(items: Record<string, { title?: string; name?: string }>): CustomMap {
   const out: CustomMap = {};
   for (const k in items) {
     const it = items[k] || {};
-    out[k] = { title: base64ToUtf8(it.title_b64 ?? ''), name: base64ToUtf8(it.name_b64 ?? '') };
+    out[k] = { title: it.title ?? '', name: it.name ?? '' };
   }
   return out;
 }

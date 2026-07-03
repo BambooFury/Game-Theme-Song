@@ -5,6 +5,9 @@ local ok_fs, fs = pcall(require, "fs"); if not ok_fs then fs = nil end
 local ok_utils, utils = pcall(require, "utils"); if not ok_utils then utils = nil end
 local ok_http, http = pcall(require, "http"); if not ok_http then http = nil end
 
+collectgarbage("setpause", 120)
+collectgarbage("setstepmul", 300)
+
 local function resolve_plugin_dir()
     local source = debug.getinfo(1, "S").source or ""
     if source:sub(1, 1) == "@" then source = source:sub(2) end
@@ -37,7 +40,7 @@ local RESOLVE_MARKER = join(PLUGIN_DIR, "resolve.lock")
 local BOOT_MARKER = join(PLUGIN_DIR, "boot.lock")
 local AUDIO_DIR = join(norm_path(millennium.steam_path()), "steamui", "game_theme_song")
 local LOOPBACK_BASE = "https://steamloopback.host/game_theme_song/"
-local CONFIG_VERSION = 12
+local CONFIG_VERSION = 14
 
 local DEFAULT_SETTINGS = {
     config_version = CONFIG_VERSION,
@@ -49,6 +52,7 @@ local DEFAULT_SETTINGS = {
     max_seconds = 0,
     stop_on_launch = true,
     manual_search = true,
+    confirm_before_download = true,
 }
 
 local cache = {}
@@ -61,36 +65,56 @@ local MAX_HTTP_BYTES = 3 * 1024 * 1024
 local MAX_TITLE_LEN = 200
 local MAX_LIST_ITEMS = 500
 
-local function to_valid_utf8(s)
-    if type(s) ~= "string" then return s end
-    local out, i, n = {}, 1, #s
-    local repl = "\239\191\189"
+local function utf8_find_invalid(s, start)
+    local i, n = start or 1, #s
+    local byte = string.byte
     while i <= n do
-        local c = s:byte(i)
+        local c = byte(s, i)
         if c < 0x80 then
-            out[#out + 1] = string.char(c); i = i + 1
-        elseif c >= 0xC2 and c <= 0xDF and i + 1 <= n
-                and s:byte(i + 1) >= 0x80 and s:byte(i + 1) <= 0xBF then
-            out[#out + 1] = s:sub(i, i + 1); i = i + 2
-        elseif c >= 0xE0 and c <= 0xEF and i + 2 <= n then
-            local c2, c3 = s:byte(i + 1), s:byte(i + 2)
-            local ok = c2 >= 0x80 and c2 <= 0xBF and c3 >= 0x80 and c3 <= 0xBF
-                and not (c == 0xE0 and c2 < 0xA0)
-                and not (c == 0xED and c2 >= 0xA0)
-            if ok then out[#out + 1] = s:sub(i, i + 2); i = i + 3
-            else out[#out + 1] = repl; i = i + 1 end
-        elseif c >= 0xF0 and c <= 0xF4 and i + 3 <= n then
-            local c2, c3, c4 = s:byte(i + 1), s:byte(i + 2), s:byte(i + 3)
-            local ok = c2 >= 0x80 and c2 <= 0xBF and c3 >= 0x80 and c3 <= 0xBF
-                and c4 >= 0x80 and c4 <= 0xBF
-                and not (c == 0xF0 and c2 < 0x90)
-                and not (c == 0xF4 and c2 > 0x8F)
-            if ok then out[#out + 1] = s:sub(i, i + 3); i = i + 4
-            else out[#out + 1] = repl; i = i + 1 end
+            i = i + 1
+        elseif c >= 0xC2 and c <= 0xDF then
+            local c2 = byte(s, i + 1)
+            if not c2 or c2 < 0x80 or c2 > 0xBF then return i end
+            i = i + 2
+        elseif c >= 0xE0 and c <= 0xEF then
+            local c2, c3 = byte(s, i + 1), byte(s, i + 2)
+            if not c3 or c2 < 0x80 or c2 > 0xBF or c3 < 0x80 or c3 > 0xBF
+                or (c == 0xE0 and c2 < 0xA0) or (c == 0xED and c2 >= 0xA0) then
+                return i
+            end
+            i = i + 3
+        elseif c >= 0xF0 and c <= 0xF4 then
+            local c2, c3, c4 = byte(s, i + 1), byte(s, i + 2), byte(s, i + 3)
+            if not c4 or c2 < 0x80 or c2 > 0xBF or c3 < 0x80 or c3 > 0xBF
+                or c4 < 0x80 or c4 > 0xBF
+                or (c == 0xF0 and c2 < 0x90) or (c == 0xF4 and c2 > 0x8F) then
+                return i
+            end
+            i = i + 4
         else
-            out[#out + 1] = repl; i = i + 1
+            return i
         end
     end
+    return nil
+end
+
+local function to_valid_utf8(s)
+    if type(s) ~= "string" then return s end
+    local bad = utf8_find_invalid(s, 1)
+    if not bad then return s end
+    local out, pos, n = {}, 1, #s
+    local repl = "\239\191\189"
+    while bad do
+        if bad > pos then out[#out + 1] = s:sub(pos, bad - 1) end
+        out[#out + 1] = repl
+        pos = bad + 1
+        if pos > n then
+            bad = nil
+        else
+            bad = utf8_find_invalid(s, pos)
+        end
+    end
+    if pos <= n then out[#out + 1] = s:sub(pos) end
     return table.concat(out)
 end
 
@@ -142,9 +166,13 @@ end
 
 local function presanitize_json(str)
     str = to_valid_utf8(str)
-    str = str:gsub("\\[uU][dD][89aAbBcCdDeEfF]%x%x", "\\uFFFD")
+    if str:find("\\[uU][dD][89aAbBcCdDeEfF]%x%x") then
+        str = str:gsub("\\[uU][dD][89aAbBcCdDeEfF]%x%x", "\\uFFFD")
+    end
     return str
 end
+
+local raw_json_decode = json.decode
 
 local function safe_decode(str)
     if not str or str == "" then return nil end
@@ -152,7 +180,7 @@ local function safe_decode(str)
     if not json_safe_to_decode(str, MAX_JSON_DEPTH) then
         return nil
     end
-    local ok, val = pcall(json.decode, str)
+    local ok, val = pcall(raw_json_decode, str)
     if not ok then
         return nil
     end
@@ -211,10 +239,9 @@ end
 do
     local _encode = json.encode
     json.encode = function(v) return _encode(deep_safe(v, 0)) end
-    local _decode = json.decode
     json.decode = function(s)
         if type(s) == "string" then s = presanitize_json(s) end
-        return _decode(s)
+        return raw_json_decode(s)
     end
 end
 
@@ -280,6 +307,17 @@ local function write_file(path, data)
     return true
 end
 
+local function write_file_atomic(path, data)
+    local tmp = path .. ".tmp"
+    if not write_file(tmp, data) then return false end
+    pcall(os.remove, path)
+    if not os.rename(tmp, path) then
+        pcall(os.remove, tmp)
+        return write_file(path, data)
+    end
+    return true
+end
+
 local function merge_defaults(target, defaults)
     for k, v in pairs(defaults) do
         if target[k] == nil then target[k] = v end
@@ -306,7 +344,10 @@ local function load_state()
     local ok_s = pcall(function()
         local loaded = safe_decode(read_file(CONFIG_FILE)) or {}
         if type(loaded) ~= "table" then loaded = {} end
-        if (loaded.config_version or 0) < CONFIG_VERSION then loaded.config_version = CONFIG_VERSION end
+        if (loaded.config_version or 0) < 14 then
+    loaded.confirm_before_download = true
+end
+if (loaded.config_version or 0) < CONFIG_VERSION then loaded.config_version = CONFIG_VERSION end
         settings = merge_defaults(loaded, DEFAULT_SETTINGS)
     end)
     if not ok_s or type(settings) ~= "table" then
@@ -316,15 +357,15 @@ local function load_state()
 end
 
 local function save_cache()
-    local s = safe_encode(cache); if s then write_file(CACHE_FILE, s) end
+    local s = safe_encode(cache); if s then write_file_atomic(CACHE_FILE, s) end
 end
 
 local function save_settings()
-    local s = safe_encode(settings); if s then write_file(CONFIG_FILE, s) end
+    local s = safe_encode(settings); if s then write_file_atomic(CONFIG_FILE, s) end
 end
 
 local function save_custom()
-    local s = safe_encode(custom); if s then write_file(CUSTOM_FILE, s) end
+    local s = safe_encode(custom); if s then write_file_atomic(CUSTOM_FILE, s) end
 end
 
 local function cleanup_legacy_worker()
@@ -537,7 +578,9 @@ local function looks_like_audio(path)
     f:close()
     if #head < 4 then return false, "too_short" end
     local sig3, sig4 = head:sub(1, 3), head:sub(1, 4)
-    if sig3 == "ID3" or sig4 == "OggS" or sig4 == "fLaC" or sig4 == "RIFF" then return true end
+if sig3 == "ID3" or sig4 == "OggS" or sig4 == "fLaC" or sig4 == "RIFF" then return true end
+if #head >= 8 and head:sub(5, 8) == "ftyp" then return true end
+if sig4 == "\26\69\223\163" then return true end
     local b1, b2 = head:byte(1, 2)
     if b1 == 255 and b2 and b2 >= 224 then return true end
     return false, head:gsub("%c", "."):sub(1, 16)
@@ -623,9 +666,10 @@ end
 local function collect_audio_files(root, max_depth, max_entries)
     local results = {}
     local queue = { { path = root, depth = 0 } }
-    local scanned = 0
-    while #queue > 0 do
-        local item = table.remove(queue, 1)
+    local qi, scanned = 1, 0
+    while qi <= #queue do
+        local item = queue[qi]
+        qi = qi + 1
         local entries = fs.list(item.path)
         if type(entries) == "table" then
             for _, e in ipairs(entries) do
@@ -926,6 +970,20 @@ local function sc_resolve(game_name, key, exclude_set, dl_base)
 end
 
 local resolve_busy = false
+local io_busy = false
+local custom_list_cache = nil
+
+local function run_io(name, fn)
+  if io_busy or resolve_busy then return json.encode({ ok = false, error = "busy" }) end
+  io_busy = true
+  local ok, res = pcall(fn)
+  io_busy = false
+  if not ok then
+    logger:warn(name .. " failed: " .. tostring(res))
+    return json.encode({ ok = false, error = "internal_error" })
+  end
+  return res
+end
 
 local function resolve_theme(app_id, force_refresh, game_name, exclude)
     if resolve_busy then return json.encode({ ok = false, error = "busy" }) end
@@ -955,7 +1013,16 @@ local function resolve_theme(app_id, force_refresh, game_name, exclude)
             local url = LOOPBACK_BASE .. cust.file .. "?v=" .. tostring(cust.ts or 0)
             return json.encode({ ok = true, url = url, title = cust.title, cached = true, custom = true })
         end
+        
         local entry = cache[key]
+        local NOT_FOUND_TTL = 6 * 3600
+if not force_refresh and not rerolling and entry and entry.not_found then
+    if (os.time() - (entry.ts or 0)) < NOT_FOUND_TTL then
+        return json.encode({ ok = false, error = "not_found_cached" })
+    end
+    cache[key] = nil
+    entry = nil
+end
         if not force_refresh and not rerolling and entry and entry.file and fs and fs.exists and fs.exists(join(AUDIO_DIR, entry.file)) then
             local url = LOOPBACK_BASE .. entry.file .. "?v=" .. tostring(entry.ts or 0)
             return json.encode({ ok = true, url = url, title = entry.title, cached = true })
@@ -982,12 +1049,18 @@ local function resolve_theme(app_id, force_refresh, game_name, exclude)
             end
             if not (r and r.file) then
                 logger:warn("no theme audio for " .. tostring(game_name) .. " (khinsider: " .. tostring(kh_err) .. ", soundcloud: " .. tostring(sc_err) .. ")")
-                local err_code = sc_err or kh_err or "not_found"
-                if rerolling then err_code = "no_alternative" end
-                return json.encode({ ok = false, error = err_code })
+local err_code = sc_err or kh_err or "not_found"
+if rerolling then err_code = "no_alternative" end
+if not rerolling then
+    cache[key] = { not_found = true, ts = os.time() }
+    save_cache()
+end
+return json.encode({ ok = false, error = err_code })
             end
         end
-        local ts = os.time()
+            local ts = os.time()
+        local other_base = target_slot == "b" and key or (key .. "_b")
+        for _, e in ipairs(AUDIO_EXTS) do pcall(fs.remove, join(AUDIO_DIR, other_base .. "." .. e)) end
         cache[key] = { file = r.file, title = sanitize_text(r.title), ts = ts, slot = target_slot }
         save_cache()
         local url = LOOPBACK_BASE .. r.file .. "?v=" .. tostring(ts)
@@ -995,6 +1068,8 @@ local function resolve_theme(app_id, force_refresh, game_name, exclude)
     end)
     pcall(os.remove, RESOLVE_MARKER)
     resolve_busy = false
+    collectgarbage("collect")
+    collectgarbage("collect")
     if not ok then logger:warn("resolve_theme crashed: " .. tostring(result)); return json.encode({ ok = false, error = "internal_error" }) end
     return result
 end
@@ -1010,8 +1085,11 @@ end
 function invalidate_audio(app_id)
     local key = tostring(app_id)
     if fs and fs.remove then
-        for _, e in ipairs(AUDIO_EXTS) do pcall(fs.remove, join(AUDIO_DIR, key .. "." .. e)) end
+    for _, e in ipairs(AUDIO_EXTS) do
+        pcall(fs.remove, join(AUDIO_DIR, key .. "." .. e))
+        pcall(fs.remove, join(AUDIO_DIR, key .. "_b." .. e))
     end
+end
     cache[key] = nil
     save_cache()
     return json.encode({ ok = true })
@@ -1030,19 +1108,19 @@ local function custom_ext(filename)
 end
 
 function get_custom_list()
-    local ok, result = pcall(function()
-        local items, count = {}, 0
-        for key, entry in pairs(custom) do
-            if entry and entry.file and fs and fs.exists and fs.exists(join(AUDIO_DIR, entry.file)) then
-                items[tostring(key)] = { title_b64 = base64_encode(sanitize_text(entry.title or "")), name_b64 = base64_encode(sanitize_text(entry.name or "")) }
-                count = count + 1
-                if count >= MAX_LIST_ITEMS then break end
-            end
-        end
-        return json.encode({ ok = true, items = items })
-    end)
-    if not ok then logger:warn("get_custom_list crashed: " .. tostring(result)); return json.encode({ ok = false, error = "internal_error" }) end
-    return result
+  return run_io("get_custom_list", function()
+    if custom_list_cache then return custom_list_cache end
+    local items, count = {}, 0
+    for key, entry in pairs(custom) do
+      if entry and entry.file and fs and fs.exists and fs.exists(join(AUDIO_DIR, entry.file)) then
+        items[tostring(key)] = { title = sanitize_text(entry.title or ""), name = sanitize_text(entry.name or "") }
+        count = count + 1
+        if count >= MAX_LIST_ITEMS then break end
+      end
+    end
+    custom_list_cache = json.encode({ ok = true, items = items })
+    return custom_list_cache
+  end)
 end
 
 local upload_sessions = {}
@@ -1072,6 +1150,7 @@ local function store_custom(app_id, game_name, filename, title, data, ext_hint, 
     local ts = os.time()
     custom[key] = { file = fname, title = clean_title, name = resolved_name or "", ts = ts }
     save_custom()
+    custom_list_cache = nil
     local url = LOOPBACK_BASE .. fname .. "?v=" .. tostring(ts)
     return json.encode({ ok = true, url = url })
 end
@@ -1103,6 +1182,8 @@ function set_custom_music_finish(app_id, ext, name_b64, title_b64)
         upload_sessions[key] = nil
         return store_custom(app_id, nil, nil, nil, data, ext, title_b64, name_b64)
     end)
+    collectgarbage("collect")
+    collectgarbage("collect")
     if not ok then logger:warn("set_custom_music_finish crashed: " .. tostring(result)); return json.encode({ ok = false, error = "internal_error" }) end
     return result
 end
@@ -1113,8 +1194,9 @@ function clear_custom_music(app_id)
         if fs and fs.remove then
             for e in pairs(CUSTOM_EXTS) do pcall(fs.remove, join(AUDIO_DIR, "custom_" .. key .. "." .. e)) end
         end
-        custom[key] = nil
-        save_custom()
+custom[key] = nil
+save_custom()
+    custom_list_cache = nil
         return json.encode({ ok = true })
     end)
     if not ok then logger:warn("clear_custom_music crashed: " .. tostring(result)); return json.encode({ ok = false, error = "internal_error" }) end
@@ -1130,7 +1212,7 @@ end
 function set_setting(key, value)
     if DEFAULT_SETTINGS[key] == nil then return json.encode({ ok = false, error = "unknown_key" }) end
     settings[key] = value
-    if not write_file(CONFIG_FILE, json.encode(settings)) then return json.encode({ ok = false, error = "write_failed" }) end
+    if not write_file_atomic(CONFIG_FILE, json.encode(settings)) then return json.encode({ ok = false, error = "write_failed" }) end
     return json.encode({ ok = true })
 end
 
@@ -1142,22 +1224,31 @@ local function file_size(path)
     return size
 end
 
+local function audio_dir_sizes()
+    local sizes = {}
+    if fs and fs.list then
+        local entries = fs.list(AUDIO_DIR)
+        if type(entries) == "table" then
+            for _, e in ipairs(entries) do
+                if e.is_file then sizes[tostring(e.name)] = tonumber(e.size) or 0 end
+            end
+        end
+    end
+    return sizes
+end
+
 function get_cache_info()
-    local ok, result = pcall(function()
+    return run_io("get_cache_info", function()
+        local sizes = audio_dir_sizes()
         local count, bytes = 0, 0
         for _, entry in pairs(cache) do
-            if entry and entry.file then
-                local path = join(AUDIO_DIR, entry.file)
-                if fs and fs.exists and fs.exists(path) then
-                    count = count + 1
-                    bytes = bytes + file_size(path)
-                end
+            if entry and entry.file and sizes[entry.file] then
+                count = count + 1
+                bytes = bytes + sizes[entry.file]
             end
         end
         return json.encode({ ok = true, count = count, bytes = bytes })
     end)
-    if not ok then logger:warn("get_cache_info crashed: " .. tostring(result)); return json.encode({ ok = false, error = "internal_error" }) end
-    return result
 end
 
 function clear_audio_cache()
@@ -1168,7 +1259,10 @@ function clear_audio_cache()
                 local path = join(AUDIO_DIR, entry.file)
                 if fs and fs.exists and fs.exists(path) and pcall(fs.remove, path) then removed = removed + 1 end
             end
-            for _, e in ipairs(AUDIO_EXTS) do pcall(fs.remove, join(AUDIO_DIR, tostring(key) .. "." .. e)) end
+            for _, e in ipairs(AUDIO_EXTS) do
+    pcall(fs.remove, join(AUDIO_DIR, tostring(key) .. "." .. e))
+    pcall(fs.remove, join(AUDIO_DIR, tostring(key) .. "_b." .. e))
+end
         end
         cache = {}
         mem_cache.soundtrack = {}
@@ -1182,22 +1276,18 @@ function clear_audio_cache()
 end
 
 function get_cache_list()
-    local ok, result = pcall(function()
+    return run_io("get_cache_list", function()
+        local sizes = audio_dir_sizes()
         local items, count = {}, 0
         for key, entry in pairs(cache) do
-            if entry and entry.file then
-                local path = join(AUDIO_DIR, entry.file)
-                if fs and fs.exists and fs.exists(path) then
-                    items[tostring(key)] = { title_b64 = base64_encode(sanitize_text(entry.title or "")), bytes = file_size(path), ts = entry.ts or 0 }
-                    count = count + 1
-                    if count >= MAX_LIST_ITEMS then break end
-                end
+            if entry and entry.file and sizes[entry.file] then
+                items[tostring(key)] = { title_b64 = base64_encode(sanitize_text(entry.title or "")), bytes = sizes[entry.file], ts = entry.ts or 0 }
+                count = count + 1
+                if count >= MAX_LIST_ITEMS then break end
             end
         end
         return json.encode({ ok = true, items = items })
     end)
-    if not ok then logger:warn("get_cache_list crashed: " .. tostring(result)); return json.encode({ ok = false, error = "internal_error" }) end
-    return result
 end
 
 function clear_cache_for(app_id)
@@ -1210,7 +1300,10 @@ function clear_cache_for(app_id)
             if fs and fs.exists and fs.exists(path) then freed = file_size(path) end
             pcall(fs.remove, path)
         end
-        for _, e in ipairs(AUDIO_EXTS) do pcall(fs.remove, join(AUDIO_DIR, key .. "." .. e)) end
+        for _, e in ipairs(AUDIO_EXTS) do
+    pcall(fs.remove, join(AUDIO_DIR, key .. "." .. e))
+    pcall(fs.remove, join(AUDIO_DIR, key .. "_b." .. e))
+end
         cache[key] = nil
         save_cache()
         return json.encode({ ok = true, bytes = freed })

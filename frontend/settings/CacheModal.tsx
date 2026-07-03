@@ -1,17 +1,23 @@
 import React, { useState, useEffect, useMemo, useCallback, memo } from 'react';
+import { ModalRoot, DialogHeader, DialogBody, DialogButton, TextField, showModal } from '@steambrew/client';
 import { SETTINGS_CSS, SETTINGS_ICONS } from '../_assets.generated';
 import { warn } from '../core/log';
 import { base64ToUtf8 } from '../core/base64';
 import { getCacheList, clearCacheFor, clearAudioCache } from '../core/api';
-import { stopAudio, getCurrentAppId, resetPlayback, setGlobalCacheInfo, getCacheWindowOpen, setCacheWindowOpen, subscribeCacheWindow } from '../core/engine';
+import { stopAudio, getCurrentAppId, resetPlayback, setGlobalCacheInfo, getPendingConfirmAppId } from '../core/engine';
 import type { CacheItem } from '../core/types';
 import { getLibraryApps } from './library';
 
+const TRASH_HTML = { __html: SETTINGS_ICONS.trash };
+const SUB_STYLE: React.CSSProperties = { margin: '0 0 10px', color: 'rgba(255,255,255,0.55)', fontSize: '12px' };
+const ERROR_STYLE: React.CSSProperties = { color: '#ff8175', textAlign: 'center', padding: '8px 0', fontSize: '12px' };
+const LIST_STYLE: React.CSSProperties = { height: '300px', overflowY: 'auto', padding: '10px 0' };
+
 function thumbCandidates(appid: number): string[] {
   return [
-    `https://cdn.cloudflare.steamstatic.com/steam/apps/${appid}/header.jpg`,
-    `https://steamcdn-a.akamaihd.net/steam/apps/${appid}/header.jpg`,
-    `https://cdn.cloudflare.steamstatic.com/steam/apps/${appid}/capsule_231x87.jpg`,
+    'https://cdn.cloudflare.steamstatic.com/steam/apps/' + appid + '/header.jpg',
+    'https://steamcdn-a.akamaihd.net/steam/apps/' + appid + '/header.jpg',
+    'https://cdn.cloudflare.steamstatic.com/steam/apps/' + appid + '/capsule_231x87.jpg',
   ];
 }
 
@@ -35,19 +41,25 @@ const CacheRow = memo(function CacheRow({ item, busy, onDelete }: CacheRowProps)
       </div>
       <div className="gts-cache-info">
         <div className="gts-cache-name">{item.name}</div>
-        <div className="gts-cache-meta">{item.title ? `${item.title} · ` : ''}{(item.bytes / 1048576).toFixed(1)} MB</div>
+        <div className="gts-cache-meta">{item.title ? item.title + ' · ' : ''}{(item.bytes / 1048576).toFixed(1)} MB</div>
       </div>
-      <button className="gts-lib-mini gts-danger" disabled={busy} onClick={() => onDelete(item)} dangerouslySetInnerHTML={{ __html: SETTINGS_ICONS.trash }} />
+      <button className="gts-lib-mini gts-danger" disabled={busy} onClick={() => onDelete(item)} dangerouslySetInnerHTML={TRASH_HTML} />
     </div>
   );
 });
 
-const CacheModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
+interface CacheModalProps {
+  closeModal?: () => void;
+}
+
+const CacheModal: React.FC<CacheModalProps> = ({ closeModal }) => {
   const [items, setItems] = useState<CacheItem[] | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [clearingAll, setClearingAll] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
+
+  const close = () => { closeModal?.(); };
 
   const broadcast = (list: CacheItem[]) => {
     setGlobalCacheInfo({ count: list.length, bytes: list.reduce((s, x) => s + x.bytes, 0) });
@@ -60,12 +72,19 @@ const CacheModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         for (const a of getLibraryApps()) nameById.set(a.appid, a.name);
         const raw = await getCacheList();
         const info = typeof raw === 'string' ? JSON.parse(raw) : raw;
-        if (!info?.ok || !info.items) { setItems([]); return; }
+        if (!info?.ok || !info.items) {
+          if (info?.error === 'busy') setError('Search in progress — try again in a moment.');
+          setItems([]);
+          if (info?.error !== 'busy') broadcast([]);
+          return;
+        }
+        const pendingId = getPendingConfirmAppId();
         const list: CacheItem[] = [];
         for (const k in info.items) {
           const it = info.items[k] || {};
           const appid = Number(k);
-          list.push({ appid, name: nameById.get(appid) ?? `App ${appid}`, title: base64ToUtf8(it.title_b64 ?? ''), bytes: Number(it.bytes ?? 0) });
+          if (pendingId != null && appid === pendingId) continue;
+          list.push({ appid, name: nameById.get(appid) ?? 'App ' + appid, title: base64ToUtf8(it.title_b64 ?? ''), bytes: Number(it.bytes ?? 0) });
         }
         list.sort((a, b) => a.name.localeCompare(b.name));
         setItems(list);
@@ -75,10 +94,7 @@ const CacheModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         setItems([]);
       }
     })();
-    const esc = (ev: KeyboardEvent) => { if (ev.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', esc);
-    return () => window.removeEventListener('keydown', esc);
-  }, [onClose]);
+  }, []);
 
   const onDelete = useCallback(async (item: CacheItem) => {
     setBusyId(item.appid);
@@ -127,55 +143,52 @@ const CacheModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     return q ? list.filter((x) => x.name.toLowerCase().includes(q)) : list;
   }, [items, query]);
 
+  const subText = count > 0
+    ? count + ' ' + (count === 1 ? 'track' : 'tracks') + ' · ' + (totalBytes / 1048576).toFixed(1) + ' MB on disk'
+    : 'Nothing downloaded yet.';
+
   return (
-    <>
+    <ModalRoot closeModal={close} onCancel={close} onEscKeypress={close}>
       <style>{SETTINGS_CSS}</style>
-      <div className="gts-lib-dim" onMouseDown={(e: React.MouseEvent) => { if (e.target === e.currentTarget) onClose(); }}>
-        <div className="gts-lib-dlg" role="dialog" aria-modal="true">
-          <div className="gts-lib-head">
-            <span className="gts-lib-head-ic" dangerouslySetInnerHTML={{ __html: SETTINGS_ICONS.trash }} />
-            <span className="gts-lib-head-text">
-              <div className="gts-lib-title">Downloaded music</div>
-              <div className="gts-lib-sub">
-                {count > 0 ? `${count} ${count === 1 ? 'track' : 'tracks'} · ${(totalBytes / 1048576).toFixed(1)} MB on disk` : 'Nothing downloaded yet.'}
-              </div>
-            </span>
-            {count > 0 && <button className="gts-cache-clearall" disabled={clearingAll} onClick={() => { void onClearAll(); }}>{clearingAll ? 'Clearing…' : 'Clear all'}</button>}
-            <button className="gts-lib-x" aria-label="Close" onClick={onClose}>✕</button>
-          </div>
-
-          {count > 0 && (
-            <div className="gts-lib-search">
-              <input type="text" placeholder="Search downloaded music…" value={query} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setQuery(e.target.value)} />
-            </div>
-          )}
-
-          {error && <div className="gts-lib-foot" style={{ color: '#ff8585' }}>{error}</div>}
-
-          <div className="gts-cache-list">
-            {items === null && <div className="gts-lib-loading">Loading…</div>}
-            {items !== null && count === 0 && <div className="gts-lib-empty">Auto-downloaded themes will show up here.</div>}
-            {items !== null && count > 0 && visible.length === 0 && <div className="gts-lib-empty">No tracks match “{query}”.</div>}
-            {visible.map((item) => (
-              <CacheRow key={item.appid} item={item} busy={busyId === item.appid} onDelete={onDelete} />
-            ))}
-          </div>
-
-          <div className="gts-lib-foot">
-            Removing a track frees disk space — it re-downloads automatically next time you open that game's page.
-          </div>
+      <DialogHeader>Downloaded music</DialogHeader>
+      <DialogBody>
+        <div style={SUB_STYLE}>{subText}</div>
+        {count > 0 && (
+          <TextField label="Search" value={query} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setQuery(e.target.value)} />
+        )}
+        {error && <div style={ERROR_STYLE}>{error}</div>}
+        <div style={LIST_STYLE} className="gts-cache-list">
+          {items === null && <div className="gts-lib-loading">Loading…</div>}
+          {items !== null && count === 0 && <div className="gts-lib-empty">Auto-downloaded themes will show up here.</div>}
+          {items !== null && count > 0 && visible.length === 0 && <div className="gts-lib-empty">No tracks match “{query}”.</div>}
+          {visible.map((item) => (
+            <CacheRow key={item.appid} item={item} busy={busyId === item.appid} onDelete={onDelete} />
+          ))}
         </div>
-      </div>
-    </>
+        {count > 0 && (
+          <DialogButton disabled={clearingAll} onClick={() => { void onClearAll(); }}>
+            {clearingAll ? 'Clearing…' : 'Clear all'}
+          </DialogButton>
+        )}
+        <div className="gts-lib-foot">
+          Removing a track frees disk space — it re-downloads automatically next time you open that game's page.
+        </div>
+      </DialogBody>
+    </ModalRoot>
   );
 };
 
-export const CacheWindow: React.FC = () => {
-  const [open, setOpen] = useState(getCacheWindowOpen());
-
-  useEffect(() => subscribeCacheWindow(setOpen), []);
-
-  if (!open) return null;
-
-  return <CacheModal onClose={() => setCacheWindowOpen(false)} />;
-};
+export function openCacheWindow(): void {
+  let handle: ReturnType<typeof showModal> | null = null;
+  handle = showModal(
+    <CacheModal />,
+    window,
+    {
+      strTitle: 'Downloaded music',
+      bNeverPopOut: true,
+      popupWidth: 760,
+      popupHeight: 560,
+    },
+  );
+  void handle;
+}

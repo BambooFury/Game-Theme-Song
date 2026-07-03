@@ -10,6 +10,7 @@ export interface Settings {
   max_seconds: number;
   stop_on_launch: boolean;
   manual_search: boolean;
+  confirm_before_download: boolean;
 }
 
 export interface CacheInfo {

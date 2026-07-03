@@ -11,6 +11,7 @@ const DEFAULTS: Settings = {
   max_seconds: 0,
   stop_on_launch: true,
   manual_search: true,
+  confirm_before_download: true,
 };
 
 export const state: { settings: Settings } = { settings: { ...DEFAULTS } };
@@ -194,6 +195,7 @@ let currentGameName: string | null = null;
 let currentTitle: string | null = null;
 let currentUrl: string | null = null;
 let rerollExclude: string[] = [];
+let pendingAppId: number | null
 
 async function resolveAndPlay(
   appId: number,
@@ -201,7 +203,8 @@ async function resolveAndPlay(
   mySeq: number,
   getSeq: () => number,
   exclude: string[],
-): Promise<{ ok: boolean; title: string | null; url: string | null; cached: boolean }> {
+  onResolved?: (cached: boolean) => void,
+  ): Promise<{ ok: boolean; title: string | null; url: string | null; cached: boolean; custom: boolean }> {
   const rerolling = exclude.length > 0;
   const excludeArg = JSON.stringify(exclude);
   let resp: any;
@@ -212,26 +215,41 @@ async function resolveAndPlay(
     resp = typeof raw === 'string' ? JSON.parse(raw) : raw;
   } catch (e) {
     warn('backend error', e);
-    return { ok: false, title: null, url: null, cached: false };
+    return { ok: false, title: null, url: null, cached: false, custom: false };
   }
-  if (mySeq !== getSeq()) return { ok: false, title: null, url: null, cached: false };
+  if (resp && resp.ok === false && resp.error === 'busy') {
+  await new Promise((r) => setTimeout(r, 1500));
+  if (mySeq !== getSeq()) return { ok: false, title: null, url: null, cached: false, custom: false };
+  try {
+    const raw = rerolling
+      ? await rerollTheme({ app_id: appId, game_name: name, force_refresh: true, exclude: excludeArg })
+      : await getThemeAudio({ app_id: appId, game_name: name, force_refresh: false });
+    resp = typeof raw === 'string' ? JSON.parse(raw) : raw;
+  } catch (e) {
+    warn('backend retry error', e);
+    return { ok: false, title: null, url: null, cached: false, custom: false };
+  }
+}
+  if (mySeq !== getSeq()) return { ok: false, title: null, url: null, cached: false, custom: false };
   if (!resp?.ok || !resp.url) {
     warn('no audio for', name, resp?.error);
-    return { ok: false, title: null, url: null, cached: false };
+    return { ok: false, title: null, url: null, cached: false, custom: false };
   }
-
+  onResolved?.(!!resp.cached);
+  if (shouldSuppressPlayback(appId)) return { ok: false, title: null, url: null, cached: false, custom: false };
   const ok = await playUrl(resp.url, mySeq, getSeq);
-  if (ok || mySeq !== getSeq()) return { ok, title: resp.title ?? null, url: ok ? resp.url : null, cached: !!resp.cached };
+  if (ok || mySeq !== getSeq()) return { ok, title: resp.title ?? null, url: ok ? resp.url : null, cached: !!resp.cached, custom: !!resp.custom };
 
   await invalidateAudio({ app_id: appId });
   const raw2 = rerolling
     ? await rerollTheme({ app_id: appId, game_name: name, force_refresh: true, exclude: excludeArg })
     : await getThemeAudio({ app_id: appId, game_name: name, force_refresh: true });
   const r2 = typeof raw2 === 'string' ? JSON.parse(raw2) : raw2;
-  if (mySeq !== getSeq() || !r2?.ok || !r2.url) return { ok: false, title: null, url: null, cached: false };
-  const ok2 = await playUrl(r2.url, mySeq, getSeq);
-  return { ok: ok2, title: r2.title ?? null, url: ok2 ? r2.url : null, cached: false };
+  if (mySeq !== getSeq() || !r2?.ok || !r2.url) return { ok: false, title: null, url: null, cached: false, custom: false };
+const ok2 = await playUrl(r2.url, mySeq, getSeq);
+return { ok: ok2, title: r2.title ?? null, url: ok2 ? r2.url : null, cached: false, custom: !!r2.custom };
 }
+
 
 const REROLL_DEBOUNCE_MS = 450;
 let rerollDebounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -261,9 +279,10 @@ async function runReroll(): Promise<void> {
   try {
     const { ok, title, url } = await resolveAndPlay(appId, name, mySeq, getSeq, rerollExclude);
     if (mySeq !== activeSeq) return;
-    if (ok) {
+        if (ok) {
       currentTitle = title;
       currentUrl = url;
+      pendingConfirmAppId = confirmModeOn() ? appId : null;
       setToast('ready', title);
     } else {
       if (currentUrl) await playUrl(currentUrl, mySeq, getSeq);
@@ -278,8 +297,26 @@ async function runReroll(): Promise<void> {
   }
 }
 
+let pendingConfirmAppId: number | null = null;
+
+function confirmModeOn(): boolean {
+  return state.settings.manual_search && state.settings.confirm_before_download;
+}
+
+function discardPending(keepAppId: number | null = null) {
+  const id = pendingConfirmAppId;
+  if (id == null || id === keepAppId) return;
+  pendingConfirmAppId = null;
+  void invalidateAudio({ app_id: id }).catch((e) => warn('failed to discard pending song', e));
+}
+
 export function acceptCurrent(): void {
+  pendingConfirmAppId = null;
   setToast('off');
+}
+
+export function getPendingConfirmAppId(): number | null {
+  return pendingConfirmAppId;
 }
 
 let libWindowOpen = false;
@@ -350,7 +387,12 @@ async function playForApp(appId: number) {
   let mySeq = -1;
   try {
     if (!state.settings.enabled) return;
+    if (shouldSuppressPlayback(appId)) return;
     if (currentAppId === appId && audioEl && !audioEl.paused) return;
+    if (pendingAppId != null && pendingAppId !== appId) {
+      void invalidateAudio({ app_id: pendingAppId });
+      pendingAppId = null;
+    }
     currentAppId = appId;
     mySeq = ++activeSeq;
     const getSeq = () => activeSeq;
@@ -363,19 +405,24 @@ async function playForApp(appId: number) {
     if (!name) { warn('no name for', appId); return; }
     currentGameName = name;
 
-    let searchingShown = false;
-    const searchingTimer = setTimeout(() => {
-      if (mySeq === activeSeq) { searchingShown = true; setToast('searching', null); }
-    }, 350);
+        const searchingTimer = setTimeout(() => {
+  if (mySeq === activeSeq) setToast('searching', null);
+}, 350);
 
-    const { ok, title, url, cached } = await resolveAndPlay(appId, name, mySeq, getSeq, []);
+        const { ok, title, url, cached } = await resolveAndPlay(appId, name, mySeq, getSeq, [], (isCached) => {
+      if (isCached) {
+        clearTimeout(searchingTimer);
+        if (mySeq === activeSeq) setToast('off');
+      }
+    });
     clearTimeout(searchingTimer);
     if (mySeq !== activeSeq) return;
     if (ok) {
       currentTitle = title;
       currentUrl = url;
+      pendingConfirmAppId = confirmModeOn() && !cached ? appId : null;
       if (!state.settings.manual_search) setToast('off');
-      else if (cached && !searchingShown) setToast('off');
+      else if (cached) setToast('off');
       else setToast('ready', title);
     } else {
       setToast('off');
@@ -440,8 +487,13 @@ function pollOnce() {
     navDebounceTimer = null;
     const finalId = detectAppId();
     if (finalId === currentAppId) return;
+    discardPending(finalId);
     stopAudio();
-    if (finalId === null) { currentAppId = null; setToast('off'); }
+    if (finalId === null) {
+      if (pendingAppId != null) { void invalidateAudio({ app_id: pendingAppId }); pendingAppId = null; }
+      currentAppId = null;
+      setToast('off');
+    }
     else void playForApp(finalId);
   }, NAV_DEBOUNCE_MS);
 }
@@ -454,6 +506,41 @@ export function startPolling() {
 }
 
 let launchHook: { unregister?: () => void } | null = null;
+let lifetimeHook: { unregister?: () => void } | null = null;
+
+const LAUNCH_SUPPRESS_MS = 15000;
+const runningApps = new Set<number>();
+let recentLaunchAppId: number | null = null;
+let recentLaunchUntil = 0;
+
+function parseLaunchAppId(...args: unknown[]): number | null {
+  for (const a of args) {
+    const n = Number(String(a ?? ''));
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return null;
+}
+
+function isAppRunningInStore(appId: number): boolean {
+  try {
+    const o = (window as any).appStore?.GetAppOverviewByAppID?.(appId);
+    if (o?.BIsAppRunning?.() || o?.running) return true;
+  } catch {}
+  return false;
+}
+
+function shouldSuppressPlayback(appId: number): boolean {
+  if (!state.settings.stop_on_launch) return false;
+  if (runningApps.has(appId)) return true;
+  if (recentLaunchAppId === appId && Date.now() < recentLaunchUntil) return true;
+  return isAppRunningInStore(appId);
+}
+
+function haltPlayback() {
+  ++activeSeq;
+  stopAudio(0.4);
+  setToast('off');
+}
 
 export function registerLaunchStop() {
   try {
@@ -462,16 +549,36 @@ export function registerLaunchStop() {
       warn('RegisterForGameActionStart unavailable');
       return;
     }
-    launchHook = sc.Apps.RegisterForGameActionStart(() => {
-      if (state.settings.stop_on_launch) stopAudio(0.4);
+    launchHook = sc.Apps.RegisterForGameActionStart((_actionType: unknown, strAppId?: unknown) => {
+      recentLaunchAppId = parseLaunchAppId(strAppId);
+      recentLaunchUntil = Date.now() + LAUNCH_SUPPRESS_MS;
+      if (state.settings.stop_on_launch) haltPlayback();
     });
   } catch (e) {
     warn('failed to register launch listener', e);
+  }
+  try {
+    const gs = (window as any).SteamClient?.GameSessions;
+    if (gs?.RegisterForAppLifetimeNotifications) {
+      lifetimeHook = gs.RegisterForAppLifetimeNotifications((n: any) => {
+        const id = Number(n?.unAppID ?? n?.appid ?? 0);
+        if (!Number.isFinite(id) || id <= 0) return;
+        if (n?.bRunning) {
+          runningApps.add(id);
+          if (state.settings.stop_on_launch && currentAppId === id) haltPlayback();
+        } else {
+          runningApps.delete(id);
+        }
+      });
+    }
+  } catch (e) {
+    warn('failed to register lifetime listener', e);
   }
 }
 
 export function unregisterLaunchStop() {
   launchHook?.unregister?.();
+  lifetimeHook?.unregister?.();
 }
 
 export function resetPlayback() {

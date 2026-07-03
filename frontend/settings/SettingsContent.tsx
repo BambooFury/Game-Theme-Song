@@ -1,10 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { SETTINGS_CSS, SETTINGS_ICONS } from '../_assets.generated';
+import { ButtonItem, SliderField, ToggleField } from '@steambrew/client';
 import { warn } from '../core/log';
 import { getBackendSettings, setBackendSetting, getCacheInfo, getCustomList } from '../core/api';
-import { state, getAudioEl, setLibWindowOpen, setCacheWindowOpen, setGlobalCustomCount, getCustomCount, subscribeCustomCount, subscribeCacheInfo } from '../core/engine';
+import { state, getAudioEl, setGlobalCustomCount, getCustomCount, subscribeCustomCount, subscribeCacheInfo } from '../core/engine';
+import { openLibraryWindow } from './LibraryModal';
+import { openCacheWindow } from './CacheModal';
 import type { CacheInfo } from '../core/types';
-import { ToggleRow, ButtonRow, SliderRow, formatLimit } from './rows';
+
+const formatLimit = (sec: number) => {
+  if (sec <= 0) return 'Off';
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return m > 0 ? `${m}:${String(s).padStart(2, '0')}` : `${s}s`;
+};
 
 export const SettingsContent: React.FC = () => {
   const [percent, setPercent] = useState(Math.round(state.settings.volume * 100));
@@ -12,6 +20,7 @@ export const SettingsContent: React.FC = () => {
   const [maxSec, setMaxSec] = useState(state.settings.max_seconds);
   const [stopOnLaunch, setStopOnLaunch] = useState(state.settings.stop_on_launch);
   const [manualSearch, setManualSearch] = useState(state.settings.manual_search);
+  const [confirmDl, setConfirmDl] = useState(state.settings.confirm_before_download);
   const [cacheCount, setCacheCount] = useState<number | null>(null);
   const [cacheBytes, setCacheBytes] = useState(0);
   const [customCount, setCustomCount] = useState<number | null>(getCustomCount());
@@ -52,6 +61,7 @@ export const SettingsContent: React.FC = () => {
           setMaxSec(state.settings.max_seconds);
           setStopOnLaunch(state.settings.stop_on_launch);
           setManualSearch(state.settings.manual_search);
+          setConfirmDl(state.settings.confirm_before_download);
           const a = getAudioEl();
           if (a) a.volume = state.settings.volume;
         }
@@ -91,78 +101,87 @@ export const SettingsContent: React.FC = () => {
     state.settings.manual_search = checked;
     void setBackendSetting({ key: 'manual_search', value: checked }).catch(e => warn('save manual_search failed', e));
   };
+  const onConfirmDl = (checked: boolean) => {
+    setConfirmDl(checked);
+    state.settings.confirm_before_download = checked;
+    void setBackendSetting({ key: 'confirm_before_download', value: checked }).catch(e => warn('save confirm_before_download failed', e));
+  };
   return (
     <>
-    <style>{SETTINGS_CSS}</style>
-    <ButtonRow
-      icon={SETTINGS_ICONS.library}
-      title="Custom game music"
-      description={customCount === null
-        ? 'Choose your own theme for any game in your library.'
-        : customCount === 0
-          ? 'Pick your own theme for any game — it plays before the auto search.'
-          : `${customCount} ${customCount === 1 ? 'game uses' : 'games use'} your own track · plays first.`}
-      buttonLabel="Open"
-      onClick={() => setLibWindowOpen(true)}
-    />
-    <SliderRow
-      icon={SETTINGS_ICONS.volume}
-      title="Music volume"
-      description={percent > 0 ? 'Background theme music volume.' : 'Theme music is muted.'}
-      value={percent}
-      valueLabel={`${percent}%`}
-      min={0}
-      max={100}
-      step={1}
-      editable
-      inputSuffix="%"
-      onChange={onSlider}
-    />
-    <SliderRow
-      icon={SETTINGS_ICONS.timer}
-      title="Song length limit"
-      description={maxSec > 0
-        ? (loop ? `The song restarts after ${formatLimit(maxSec)}.` : `The song stops after ${formatLimit(maxSec)}.`)
-        : 'The full song plays.'}
-      value={maxSec}
-      valueLabel={formatLimit(maxSec)}
-      min={0}
-      max={300}
-      step={5}
-      editable
-      inputSuffix="s"
-      onChange={onLimit}
-    />
-    <ToggleRow
-      icon={SETTINGS_ICONS.repeat}
-      title="Loop song"
-      description={loop ? 'The theme song repeats while you stay on the game page.' : 'The theme song plays once and stops.'}
-      checked={loop}
-      onChange={onLoop}
-    />
-    <ToggleRow
-      icon={SETTINGS_ICONS.search}
-      title="Manual song search"
-      description={manualSearch
-        ? 'When a theme is found, use the ✕ / ✓ buttons to pick a different song.'
-        : 'Classic mode — just play the first theme found, no buttons to switch.'}
-      checked={manualSearch}
-      onChange={onManualSearch}
-    />
-    <ToggleRow
-      icon={SETTINGS_ICONS.gamepad}
-      title="Stop on game launch"
-      description={stopOnLaunch ? 'Theme music stops when you launch a game.' : 'Theme music keeps playing when a game starts.'}
-      checked={stopOnLaunch}
-      onChange={onStopOnLaunch}
-    />
-    <ButtonRow
-      icon={SETTINGS_ICONS.trash}
-      title="Downloaded music"
-      description={cacheCount === null ? 'Checking…' : cacheCount === 0 ? 'Nothing downloaded yet.' : `${cacheCount} ${cacheCount === 1 ? 'track' : 'tracks'} · ${(cacheBytes / 1048576).toFixed(1)} MB on disk`}
-      buttonLabel="Manage"
-      onClick={() => setCacheWindowOpen(true)}
-    />
+      <ButtonItem
+        layout="below"
+        label="Custom game music"
+        description={customCount === null
+          ? 'Choose your own theme for any game in your library.'
+          : customCount === 0
+            ? 'Pick your own theme for any game — it plays before the auto search.'
+            : `${customCount} ${customCount === 1 ? 'game uses' : 'games use'} your own track · plays first.`}
+        onClick={() => openLibraryWindow()}
+      >
+        Open
+      </ButtonItem>
+      <SliderField
+        label="Music volume"
+        description={percent > 0 ? 'Background theme music volume.' : 'Theme music is muted.'}
+        value={percent}
+        min={0}
+        max={100}
+        step={1}
+        showValue
+        editableValue
+        valueSuffix="%"
+        onChange={onSlider}
+      />
+      <SliderField
+        label="Song length limit"
+        description={maxSec > 0
+          ? (loop ? `The song restarts after ${formatLimit(maxSec)}.` : `The song stops after ${formatLimit(maxSec)}.`)
+          : 'The full song plays.'}
+        value={maxSec}
+        min={0}
+        max={300}
+        step={5}
+        showValue
+        editableValue
+        valueSuffix="s"
+        onChange={onLimit}
+      />
+      <ToggleField
+        label="Loop song"
+        description={loop ? 'The theme song repeats while you stay on the game page.' : 'The theme song plays once and stops.'}
+        checked={loop}
+        onChange={onLoop}
+      />
+      <ToggleField
+        label="Manual song search"
+        description={manualSearch
+          ? 'When a theme is found, use the ✕ / ✓ buttons to pick a different song.'
+          : 'Classic mode — just play the first theme found, no buttons to switch.'}
+        checked={manualSearch}
+        onChange={onManualSearch}
+      />
+      <ToggleField
+        label="Keep songs only after ✓"
+        description={confirmDl
+          ? 'A found song is deleted if you leave the page without pressing ✓.'
+          : 'Every found song stays in the download cache automatically.'}
+        checked={confirmDl}
+        onChange={onConfirmDl}
+      />
+      <ToggleField
+        label="Stop on game launch"
+        description={stopOnLaunch ? 'Theme music stops when you launch a game.' : 'Theme music keeps playing when a game starts.'}
+        checked={stopOnLaunch}
+        onChange={onStopOnLaunch}
+      />
+      <ButtonItem
+        layout="below"
+        label="Downloaded music"
+        description={cacheCount === null ? 'Checking…' : cacheCount === 0 ? 'Nothing downloaded yet.' : `${cacheCount} ${cacheCount === 1 ? 'track' : 'tracks'} · ${(cacheBytes / 1048576).toFixed(1)} MB on disk`}
+        onClick={() => openCacheWindow()}
+      >
+        Manage
+      </ButtonItem>
     </>
   );
 };

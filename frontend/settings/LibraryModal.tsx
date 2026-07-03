@@ -1,22 +1,29 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback, memo } from 'react';
+import { ModalRoot, DialogHeader, DialogBody, TextField, showModal } from '@steambrew/client';
 import { SETTINGS_CSS, SETTINGS_ICONS } from '../_assets.generated';
 import { warn } from '../core/log';
 import { readFileBase64 } from '../core/base64';
 import { getCustomList, clearCustomMusic } from '../core/api';
-import { reapplyForApp, setLibWindowOpen, setGlobalCustomCount, getLibWindowOpen, subscribeLibWindow } from '../core/engine';
+import { reapplyForApp, setGlobalCustomCount } from '../core/engine';
 import type { LibApp, CustomMap } from '../core/types';
 import { ACCEPT_EXTS, MAX_UPLOAD_BYTES, MAX_CARDS, decodeCustomItems, getLibraryApps, uploadCustomMusic } from './library';
+
+const TRASH_HTML = { __html: SETTINGS_ICONS.trash };
+const SUB_STYLE: React.CSSProperties = { margin: '0 0 10px', color: 'rgba(255,255,255,0.55)', fontSize: '12px' };
+const ERROR_STYLE: React.CSSProperties = { color: '#ff8175', textAlign: 'center', padding: '8px 0', fontSize: '12px' };
+const GRID_STYLE: React.CSSProperties = { height: '440px', overflowY: 'auto', padding: '10px 0' };
+const HIDDEN_STYLE: React.CSSProperties = { display: 'none' };
 
 function coverCandidates(app: LibApp): string[] {
   const appid = app.appid;
   const list: string[] = [];
   if (app.cover) list.push(app.cover);
   list.push(
-    `https://cdn.cloudflare.steamstatic.com/steam/apps/${appid}/library_600x900.jpg`,
-    `https://steamcdn-a.akamaihd.net/steam/apps/${appid}/library_600x900.jpg`,
-    `https://cdn.cloudflare.steamstatic.com/steam/apps/${appid}/capsule_616x353.jpg`,
-    `https://cdn.cloudflare.steamstatic.com/steam/apps/${appid}/header.jpg`,
-    `https://steamcdn-a.akamaihd.net/steam/apps/${appid}/header.jpg`,
+    'https://cdn.cloudflare.steamstatic.com/steam/apps/' + appid + '/library_600x900.jpg',
+    'https://steamcdn-a.akamaihd.net/steam/apps/' + appid + '/library_600x900.jpg',
+    'https://cdn.cloudflare.steamstatic.com/steam/apps/' + appid + '/capsule_616x353.jpg',
+    'https://cdn.cloudflare.steamstatic.com/steam/apps/' + appid + '/header.jpg',
+    'https://steamcdn-a.akamaihd.net/steam/apps/' + appid + '/header.jpg',
   );
   return list;
 }
@@ -36,7 +43,7 @@ const GameCard = memo(function GameCard({ app, customTitle, busy, onSet, onClear
   const failed = idx >= urls.length;
   const hasCustom = customTitle !== undefined;
   return (
-    <div className={`gts-lib-card${hasCustom ? ' gts-has-custom' : ''}`}>
+    <div className={'gts-lib-card' + (hasCustom ? ' gts-has-custom' : '')}>
       <div className="gts-lib-cover-wrap">
         {failed
           ? <div className="gts-lib-fallback">{app.name}</div>
@@ -49,7 +56,7 @@ const GameCard = memo(function GameCard({ app, customTitle, busy, onSet, onClear
           <button className="gts-lib-mini gts-primary" disabled={busy} onClick={() => onSet(app)}>
             {busy ? 'Saving…' : hasCustom ? 'Replace' : 'Set music'}
           </button>
-          {hasCustom && <button className="gts-lib-mini gts-danger" disabled={busy} onClick={() => onClear(app)} dangerouslySetInnerHTML={{ __html: SETTINGS_ICONS.trash }} />}
+          {hasCustom && <button className="gts-lib-mini gts-danger" disabled={busy} onClick={() => onClear(app)} dangerouslySetInnerHTML={TRASH_HTML} />}
         </div>
       </div>
     </div>
@@ -57,11 +64,11 @@ const GameCard = memo(function GameCard({ app, customTitle, busy, onSet, onClear
 });
 
 interface LibraryModalProps {
-  onClose: () => void;
+  closeModal?: () => void;
   onChanged: (map: CustomMap) => void;
 }
 
-const LibraryModal: React.FC<LibraryModalProps> = ({ onClose, onChanged }) => {
+const LibraryModal: React.FC<LibraryModalProps> = ({ closeModal, onChanged }) => {
   const [apps, setApps] = useState<LibApp[] | null>(null);
   const [customMap, setCustomMap] = useState<CustomMap>({});
   const [query, setQuery] = useState('');
@@ -69,6 +76,9 @@ const LibraryModal: React.FC<LibraryModalProps> = ({ onClose, onChanged }) => {
   const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const pendingApp = useRef<LibApp | null>(null);
+  const pickingRef = useRef(false);
+
+  const close = () => { if (!pickingRef.current) closeModal?.(); };
 
   useEffect(() => {
     setApps(getLibraryApps());
@@ -79,10 +89,7 @@ const LibraryModal: React.FC<LibraryModalProps> = ({ onClose, onChanged }) => {
         if (info?.ok && info.items) setCustomMap(decodeCustomItems(info.items));
       } catch (e) { warn('getCustomList failed', e); }
     })();
-    const esc = (ev: KeyboardEvent) => { if (ev.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', esc);
-    return () => window.removeEventListener('keydown', esc);
-  }, [onClose]);
+  }, []);
 
   const customMapRef = useRef(customMap);
   customMapRef.current = customMap;
@@ -92,28 +99,37 @@ const LibraryModal: React.FC<LibraryModalProps> = ({ onClose, onChanged }) => {
   const onSet = useCallback((app: LibApp) => {
     setError(null);
     pendingApp.current = app;
+    pickingRef.current = true;
+    const onFocus = () => {
+      window.removeEventListener('focus', onFocus);
+      setTimeout(() => { pickingRef.current = false; }, 500);
+    };
+    window.addEventListener('focus', onFocus);
     fileRef.current?.click();
   }, []);
 
   const onFilePicked = async (ev: React.ChangeEvent<HTMLInputElement>) => {
+    pickingRef.current = false;
     const file = ev.target.files?.[0];
     ev.target.value = '';
     const app = pendingApp.current;
     pendingApp.current = null;
     if (!file || !app) return;
-    if (file.size > MAX_UPLOAD_BYTES) { setError(`"${file.name}" is too large (max 50 MB).`); return; }
+    if (file.size > MAX_UPLOAD_BYTES) { setError('"' + file.name + '" is too large (max 50 MB).'); return; }
     setBusyId(app.appid);
     setError(null);
     try {
       const data = await readFileBase64(file);
       const resp = await uploadCustomMusic(app.appid, app.name, file.name, data);
-      if (!resp?.ok) { setError(`Couldn't set music: ${resp?.error ?? 'unknown error'}.`); return; }
-      commit({ ...customMapRef.current, [String(app.appid)]: { title: file.name.replace(/\.[^.]+$/, ''), name: app.name } });
+      if (!resp?.ok) { setError("Couldn't set music: " + (resp?.error ?? 'unknown error') + '.'); return; }
+      const nextMap = { ...customMapRef.current };
+      nextMap[String(app.appid)] = { title: file.name.replace(/\.[^.]+$/, ''), name: app.name };
+      commit(nextMap);
       void reapplyForApp(app.appid);
     } catch (e) {
       warn('set custom failed', e);
-      const detail = e instanceof Error && e.message ? `: ${e.message}` : '';
-      setError(`Something went wrong while saving the file${detail}.`);
+      const detail = e instanceof Error && e.message ? ': ' + e.message : '';
+      setError('Something went wrong while saving the file' + detail + '.');
     } finally {
       setBusyId(null);
     }
@@ -151,68 +167,54 @@ const LibraryModal: React.FC<LibraryModalProps> = ({ onClose, onChanged }) => {
   const customCount = Object.keys(customMap).length;
   const shown = visible.slice(0, MAX_CARDS);
 
-  const tree = (
-    <>
-      <style>{SETTINGS_CSS}</style>
-      <div className="gts-lib-dim" onMouseDown={(e: React.MouseEvent) => { if (e.target === e.currentTarget) onClose(); }}>
-        <div className="gts-lib-dlg" role="dialog" aria-modal="true">
-          <div className="gts-lib-head">
-            <span className="gts-lib-head-ic" dangerouslySetInnerHTML={{ __html: SETTINGS_ICONS.library }} />
-            <span className="gts-lib-head-text">
-              <div className="gts-lib-title">Custom game music</div>
-              <div className="gts-lib-sub">
-                {customCount > 0 ? `${customCount} ${customCount === 1 ? 'game uses' : 'games use'} your own track` : 'Pick your own theme for any game — it always plays before the auto search.'}
-              </div>
-            </span>
-            <button className="gts-lib-x" aria-label="Close" onClick={onClose}>✕</button>
-          </div>
-
-          <div className="gts-lib-search">
-            <input type="text" placeholder="Search your library…" value={query} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setQuery(e.target.value)} />
-          </div>
-
-          {error && <div className="gts-lib-foot" style={{ color: '#ff8585' }}>{error}</div>}
-
-          <div className="gts-lib-grid">
-            {apps === null && <div className="gts-lib-loading">Loading your library…</div>}
-            {apps !== null && shown.length === 0 && <div className="gts-lib-empty">No games match “{query}”.</div>}
-            {shown.map((app) => (
-              <GameCard
-                key={app.appid}
-                app={app}
-                customTitle={customMap[String(app.appid)]?.title}
-                busy={busyId === app.appid}
-                onSet={onSet}
-                onClear={onClear}
-              />
-            ))}
-          </div>
-
-          <div className="gts-lib-foot">
-            {visible.length > MAX_CARDS
-              ? <>Showing first <b>{MAX_CARDS}</b> of {visible.length} — use search to narrow down.</>
-              : <>Supported formats: <b>MP3, M4A, AAC, OGG, OPUS, WAV, FLAC</b> — up to <b>50 MB</b> per file.</>}
-          </div>
-        </div>
-      </div>
-      <input ref={fileRef} type="file" accept={ACCEPT_EXTS} style={{ display: 'none' }} onChange={onFilePicked} />
-    </>
-  );
-
-  return tree;
-};
-
-export const LibraryWindow: React.FC = () => {
-  const [open, setOpen] = useState(getLibWindowOpen());
-
-  useEffect(() => subscribeLibWindow(setOpen), []);
-
-  if (!open) return null;
+  const subText = customCount > 0
+    ? customCount + ' ' + (customCount === 1 ? 'game uses' : 'games use') + ' your own track'
+    : 'Pick your own theme for any game — it always plays before the auto search.';
 
   return (
-    <LibraryModal
-      onClose={() => setLibWindowOpen(false)}
-      onChanged={(map) => setGlobalCustomCount(Object.keys(map).length)}
-    />
+    <ModalRoot closeModal={close} onCancel={close} onEscKeypress={close}>
+      <style>{SETTINGS_CSS}</style>
+      <DialogHeader>Custom game music</DialogHeader>
+      <DialogBody>
+        <div style={SUB_STYLE}>{subText}</div>
+        <TextField label="Search" value={query} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setQuery(e.target.value)} />
+        {error && <div style={ERROR_STYLE}>{error}</div>}
+        <div style={GRID_STYLE} className="gts-lib-grid">
+          {apps === null && <div className="gts-lib-loading">Loading your library…</div>}
+          {apps !== null && shown.length === 0 && <div className="gts-lib-empty">No games match “{query}”.</div>}
+          {shown.map((app) => (
+            <GameCard
+              key={app.appid}
+              app={app}
+              customTitle={customMap[String(app.appid)]?.title}
+              busy={busyId === app.appid}
+              onSet={onSet}
+              onClear={onClear}
+            />
+          ))}
+        </div>
+        <div className="gts-lib-foot">
+          {visible.length > MAX_CARDS
+            ? <>Showing first <b>{MAX_CARDS}</b> of {visible.length} — use search to narrow down.</>
+            : <>Supported formats: <b>MP3, M4A, AAC, OGG, OPUS, WAV, FLAC</b> — up to <b>50 MB</b> per file.</>}
+        </div>
+        <input ref={fileRef} type="file" accept={ACCEPT_EXTS} style={HIDDEN_STYLE} onChange={onFilePicked} />
+      </DialogBody>
+    </ModalRoot>
   );
 };
+
+export function openLibraryWindow(): void {
+  let handle: ReturnType<typeof showModal> | null = null;
+  handle = showModal(
+    <LibraryModal onChanged={(map) => setGlobalCustomCount(Object.keys(map).length)} />,
+    window,
+    {
+      strTitle: 'Custom game music',
+      bNeverPopOut: true,
+      popupWidth: 920,
+      popupHeight: 680,
+    },
+  );
+  void handle;
+}
