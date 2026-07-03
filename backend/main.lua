@@ -549,7 +549,9 @@ local function looks_like_audio(path)
     f:close()
     if #head < 4 then return false, "too_short" end
     local sig3, sig4 = head:sub(1, 3), head:sub(1, 4)
-    if sig3 == "ID3" or sig4 == "OggS" or sig4 == "fLaC" or sig4 == "RIFF" then return true end
+if sig3 == "ID3" or sig4 == "OggS" or sig4 == "fLaC" or sig4 == "RIFF" then return true end
+if #head >= 8 and head:sub(5, 8) == "ftyp" then return true end
+if sig4 == "\26\69\223\163" then return true end
     local b1, b2 = head:byte(1, 2)
     if b1 == 255 and b2 and b2 >= 224 then return true end
     return false, head:gsub("%c", "."):sub(1, 16)
