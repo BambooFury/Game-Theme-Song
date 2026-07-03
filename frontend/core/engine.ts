@@ -312,6 +312,10 @@ export function acceptCurrent(): void {
   setToast('off');
 }
 
+export function getPendingConfirmAppId(): number | null {
+  return pendingConfirmAppId;
+}
+
 let libWindowOpen = false;
 let libWindowListeners: ((open: boolean) => void)[] = [];
 

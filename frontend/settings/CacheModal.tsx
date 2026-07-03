@@ -4,7 +4,7 @@ import { SETTINGS_CSS, SETTINGS_ICONS } from '../_assets.generated';
 import { warn } from '../core/log';
 import { base64ToUtf8 } from '../core/base64';
 import { getCacheList, clearCacheFor, clearAudioCache } from '../core/api';
-import { stopAudio, getCurrentAppId, resetPlayback, setGlobalCacheInfo } from '../core/engine';
+import { stopAudio, getCurrentAppId, resetPlayback, setGlobalCacheInfo, getPendingConfirmAppId } from '../core/engine';
 import type { CacheItem } from '../core/types';
 import { getLibraryApps } from './library';
 
@@ -73,10 +73,12 @@ const CacheModal: React.FC<CacheModalProps> = ({ closeModal }) => {
         const raw = await getCacheList();
         const info = typeof raw === 'string' ? JSON.parse(raw) : raw;
         if (!info?.ok || !info.items) { setItems([]); return; }
+        const pendingId = getPendingConfirmAppId();
         const list: CacheItem[] = [];
         for (const k in info.items) {
           const it = info.items[k] || {};
           const appid = Number(k);
+          if (pendingId != null && appid === pendingId) continue;
           list.push({ appid, name: nameById.get(appid) ?? 'App ' + appid, title: base64ToUtf8(it.title_b64 ?? ''), bytes: Number(it.bytes ?? 0) });
         }
         list.sort((a, b) => a.name.localeCompare(b.name));
