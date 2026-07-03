@@ -2,7 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { ButtonItem, SliderField, ToggleField } from '@steambrew/client';
 import { warn } from '../core/log';
 import { getBackendSettings, setBackendSetting, getCacheInfo, getCustomList } from '../core/api';
-import { state, getAudioEl, setLibWindowOpen, setCacheWindowOpen, setGlobalCustomCount, getCustomCount, subscribeCustomCount, subscribeCacheInfo } from '../core/engine';
+import { state, getAudioEl, setGlobalCustomCount, getCustomCount, subscribeCustomCount, subscribeCacheInfo } from '../core/engine';
+import { openLibraryWindow } from './LibraryModal';
+import { openCacheWindow } from './CacheModal';
 import type { CacheInfo } from '../core/types';
 
 const formatLimit = (sec: number) => {
@@ -114,7 +116,7 @@ export const SettingsContent: React.FC = () => {
           : customCount === 0
             ? 'Pick your own theme for any game — it plays before the auto search.'
             : `${customCount} ${customCount === 1 ? 'game uses' : 'games use'} your own track · plays first.`}
-        onClick={() => setLibWindowOpen(true)}
+        onClick={() => openLibraryWindow()}
       >
         Open
       </ButtonItem>
@@ -176,7 +178,7 @@ export const SettingsContent: React.FC = () => {
         layout="below"
         label="Downloaded music"
         description={cacheCount === null ? 'Checking…' : cacheCount === 0 ? 'Nothing downloaded yet.' : `${cacheCount} ${cacheCount === 1 ? 'track' : 'tracks'} · ${(cacheBytes / 1048576).toFixed(1)} MB on disk`}
-        onClick={() => setCacheWindowOpen(true)}
+        onClick={() => openCacheWindow()}
       >
         Manage
       </ButtonItem>
