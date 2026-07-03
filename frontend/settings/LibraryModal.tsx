@@ -76,8 +76,9 @@ const LibraryModal: React.FC<LibraryModalProps> = ({ closeModal, onChanged }) =>
   const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const pendingApp = useRef<LibApp | null>(null);
+  const pickingRef = useRef(false);
 
-  const close = () => { closeModal?.(); };
+  const close = () => { if (!pickingRef.current) closeModal?.(); };
 
   useEffect(() => {
     setApps(getLibraryApps());
@@ -98,10 +99,17 @@ const LibraryModal: React.FC<LibraryModalProps> = ({ closeModal, onChanged }) =>
   const onSet = useCallback((app: LibApp) => {
     setError(null);
     pendingApp.current = app;
+    pickingRef.current = true;
+    const onFocus = () => {
+      window.removeEventListener('focus', onFocus);
+      setTimeout(() => { pickingRef.current = false; }, 500);
+    };
+    window.addEventListener('focus', onFocus);
     fileRef.current?.click();
   }, []);
 
   const onFilePicked = async (ev: React.ChangeEvent<HTMLInputElement>) => {
+    pickingRef.current = false;
     const file = ev.target.files?.[0];
     ev.target.value = '';
     const app = pendingApp.current;
