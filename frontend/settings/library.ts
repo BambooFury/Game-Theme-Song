@@ -8,7 +8,7 @@ export const ACCEPT_EXTS = '.mp3,.m4a,.aac,.ogg,.oga,.opus,.webm,.wav,.flac,audi
 export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
 export const MAX_CARDS = 200;
 
-const UPLOAD_CHUNK = 128 * 1024;
+const UPLOAD_CHUNK = 512 * 1024;
 
 export function decodeCustomItems(items: Record<string, { title?: string; name?: string }>): CustomMap {
   const out: CustomMap = {};
