@@ -640,9 +640,10 @@ end
 local function collect_audio_files(root, max_depth, max_entries)
     local results = {}
     local queue = { { path = root, depth = 0 } }
-    local scanned = 0
-    while #queue > 0 do
-        local item = table.remove(queue, 1)
+    local qi, scanned = 1, 0
+    while qi <= #queue do
+        local item = queue[qi]
+        qi = qi + 1
         local entries = fs.list(item.path)
         if type(entries) == "table" then
             for _, e in ipairs(entries) do
