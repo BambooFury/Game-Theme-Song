@@ -1188,20 +1188,31 @@ local function file_size(path)
     return size
 end
 
-function get_cache_info()
-  return run_io("get_cache_info", function()
-    local count, bytes = 0, 0
-    for _, entry in pairs(cache) do
-      if entry and entry.file then
-        local path = join(AUDIO_DIR, entry.file)
-        if fs and fs.exists and fs.exists(path) then
-          count = count + 1
-          bytes = bytes + file_size(path)
+local function audio_dir_sizes()
+    local sizes = {}
+    if fs and fs.list then
+        local entries = fs.list(AUDIO_DIR)
+        if type(entries) == "table" then
+            for _, e in ipairs(entries) do
+                if e.is_file then sizes[tostring(e.name)] = tonumber(e.size) or 0 end
+            end
         end
-      end
     end
-    return json.encode({ ok = true, count = count, bytes = bytes })
-  end)
+    return sizes
+end
+
+function get_cache_info()
+    return run_io("get_cache_info", function()
+        local sizes = audio_dir_sizes()
+        local count, bytes = 0, 0
+        for _, entry in pairs(cache) do
+            if entry and entry.file and sizes[entry.file] then
+                count = count + 1
+                bytes = bytes + sizes[entry.file]
+            end
+        end
+        return json.encode({ ok = true, count = count, bytes = bytes })
+    end)
 end
 
 function clear_audio_cache()
@@ -1229,20 +1240,18 @@ end
 end
 
 function get_cache_list()
-  return run_io("get_cache_list", function()
-    local items, count = {}, 0
-    for key, entry in pairs(cache) do
-      if entry and entry.file then
-        local path = join(AUDIO_DIR, entry.file)
-        if fs and fs.exists and fs.exists(path) then
-          items[tostring(key)] = { title = sanitize_text(entry.title or ""), bytes = file_size(path), ts = entry.ts or 0 }
-          count = count + 1
-          if count >= MAX_LIST_ITEMS then break end
+    return run_io("get_cache_list", function()
+        local sizes = audio_dir_sizes()
+        local items, count = {}, 0
+        for key, entry in pairs(cache) do
+            if entry and entry.file and sizes[entry.file] then
+                items[tostring(key)] = { title_b64 = base64_encode(sanitize_text(entry.title or "")), bytes = sizes[entry.file], ts = entry.ts or 0 }
+                count = count + 1
+                if count >= MAX_LIST_ITEMS then break end
+            end
         end
-      end
-    end
-    return json.encode({ ok = true, items = items })
-  end)
+        return json.encode({ ok = true, items = items })
+    end)
 end
 
 function clear_cache_for(app_id)
