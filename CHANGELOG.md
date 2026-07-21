@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.6.3](https://github.com/BambooFury/Game-Theme-Song/compare/v1.6.2...v1.6.3) (2026-07-21)
+
+
+### Maintenance
+
+* pin typescript to v5 in ci builds ([5eab49e](https://github.com/BambooFury/Game-Theme-Song/commit/5eab49e806a3ff137e4d53a57f8a517e4039d8cf))
+* pin typescript to v5 in ci builds ([9bd1801](https://github.com/BambooFury/Game-Theme-Song/commit/9bd1801a0d4ea8cbf45dcb2841bb82f6a3aedf83))
+
 ## [1.6.2](https://github.com/BambooFury/Game-Theme-Song/compare/v1.6.1...v1.6.2) (2026-07-21)
 
 
