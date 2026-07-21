@@ -1077,7 +1077,7 @@ return json.encode({ ok = false, error = err_code })
             local ts = os.time()
         local other_base = target_slot == "b" and key or (key .. "_b")
         for _, e in ipairs(AUDIO_EXTS) do pcall(fs.remove, join(AUDIO_DIR, other_base .. "." .. e)) end
-        cache[key] = { file = r.file, title = sanitize_text(r.title), ts = ts, slot = target_slot }
+        cache[key] = { file = r.file, title = sanitize_text(r.title), name = sanitize_text(game_name), ts = ts, slot = target_slot }
         save_cache()
         local url = LOOPBACK_BASE .. r.file .. "?v=" .. tostring(ts)
         return json.encode({ ok = true, url = url, title = sanitize_text(r.title), cached = false })
@@ -1308,7 +1308,7 @@ function get_cache_list()
         local items, count = {}, 0
         for key, entry in pairs(cache) do
             if entry and entry.file and sizes[entry.file] then
-                items[tostring(key)] = { title_b64 = base64_encode(sanitize_text(entry.title or "")), bytes = sizes[entry.file], ts = entry.ts or 0 }
+                items[tostring(key)] = { title_b64 = base64_encode(sanitize_text(entry.title or "")), name_b64 = base64_encode(sanitize_text(entry.name or "")), bytes = sizes[entry.file], ts = entry.ts or 0 }
                 count = count + 1
                 if count >= MAX_LIST_ITEMS then break end
             end
