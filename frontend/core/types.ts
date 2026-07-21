@@ -24,6 +24,14 @@ export interface LibApp {
   cover?: string;
 }
 
+export interface LibApp {
+	appid: number;
+	name: string;
+	cover?: string;
+	icon?: string;
+	appType?: number; 
+}
+
 export type CustomMap = Record<string, { title?: string; name?: string }>;
 
 export interface CacheItem {
