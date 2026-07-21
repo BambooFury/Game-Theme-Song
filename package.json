@@ -19,6 +19,11 @@
 	"main": "./frontend/index.jsx",
 	"author": "BambooFury",
 	"license": "MIT",
+	"pnpm": {
+		"overrides": {
+			"typescript": "^5.9.2"
+		}
+	},
 	"dependencies": {
 		"@steambrew/api": "^5.5.3",
 		"@steambrew/client": "^5.5.3",
