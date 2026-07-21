@@ -43,6 +43,7 @@ export async function loadSettingsOnce() {
 }
 
 let limitStopping = false;
+let pausedByBlur = false;
 
 function applyLimit(a: HTMLAudioElement) {
   const limit = state.settings.max_seconds;
@@ -93,6 +94,7 @@ function fadeTo(target: number, durationSec: number, onComplete?: () => void) {
 
 export function stopAudio(durationSec = state.settings.fade_seconds) {
   if (!audioEl) return;
+  pausedByBlur = false;
   audioEl.onerror = null;
   fadeTo(0, durationSec, () => {
     if (audioEl) audioEl.pause();
@@ -102,6 +104,7 @@ export function stopAudio(durationSec = state.settings.fade_seconds) {
 async function playUrl(url: string, mySeq: number, active: () => number): Promise<boolean> {
   if (mySeq !== active()) return false;
   limitStopping = false;
+  pausedByBlur = false;
   const a = ensureAudio();
   clearFade();
   a.onerror = () => {
@@ -619,6 +622,60 @@ export function registerLaunchStop() {
 export function unregisterLaunchStop() {
   launchHook?.unregister?.();
   lifetimeHook?.unregister?.();
+}
+
+let focusTimer: ReturnType<typeof setInterval> | null = null;
+
+function isAnySteamWindowFocused(): boolean {
+	try {
+		const wins: any = (globalThis as any).SteamUIStore?.WindowStore?.SteamUIWindows ?? [];
+		for (const w of wins) {
+			const bw = w?.m_BrowserWindow;
+			if (bw && !bw.closed && bw.document?.hasFocus?.()) return true;
+		}
+	} catch {}
+	try {
+		if (document.hasFocus()) return true;
+	} catch {}
+	return false;
+}
+
+function checkFocusOnce() {
+	if (libWindowOpen || cacheWindowOpen) return;
+	if (!state.settings.stop_on_launch && (runningApps.size > 0 || Date.now() < recentLaunchUntil)) return;
+	const a = audioEl;
+	if (!isAnySteamWindowFocused()) {
+		if (a && !a.paused && !pausedByBlur) {
+			pausedByBlur = true;
+			fadeTo(0, 0.3, () => {
+				if (pausedByBlur && audioEl) audioEl.pause();
+			});
+		}
+	} else if (pausedByBlur) {
+	pausedByBlur = false;
+	if (a && currentAppId != null && !shouldSuppressPlayback(currentAppId)) {
+		if (a.paused) {
+			void a.play()
+				.then(() => fadeTo(state.settings.volume, 0.5))
+				.catch(() => {});
+		} else {
+			fadeTo(state.settings.volume, 0.5);
+		}
+	}
+}
+}
+
+export function startFocusWatch() {
+	if (focusTimer) return;
+	focusTimer = setInterval(checkFocusOnce, 500);
+}
+
+export function stopFocusWatch() {
+	if (focusTimer) {
+		clearInterval(focusTimer);
+		focusTimer = null;
+	}
+	pausedByBlur = false;
 }
 
 export function resetPlayback() {

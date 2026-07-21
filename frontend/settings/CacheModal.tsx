@@ -84,7 +84,8 @@ const CacheModal: React.FC<CacheModalProps> = ({ closeModal }) => {
           const it = info.items[k] || {};
           const appid = Number(k);
           if (pendingId != null && appid === pendingId) continue;
-          list.push({ appid, name: nameById.get(appid) ?? 'App ' + appid, title: base64ToUtf8(it.title_b64 ?? ''), bytes: Number(it.bytes ?? 0) });
+          const backendName = base64ToUtf8(it.name_b64 ?? '');
+          list.push({ appid, name: nameById.get(appid) ?? (backendName || 'App ' + appid), title: base64ToUtf8(it.title_b64 ?? ''), bytes: Number(it.bytes ?? 0) });
         }
         list.sort((a, b) => a.name.localeCompare(b.name));
         setItems(list);

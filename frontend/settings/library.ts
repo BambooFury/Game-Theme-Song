@@ -37,28 +37,35 @@ function resolveCover(ov: any): string | undefined {
 export function getLibraryApps(): LibApp[] {
   const out: LibApp[] = [];
   const seen = new Set<number>();
-  const push = (ov: any) => {
-    if (!ov) return;
-    const appid = Number(ov.appid ?? ov.m_unAppID ?? ov.nAppID ?? ov.unAppID);
-    if (!appid || Number.isNaN(appid) || seen.has(appid)) return;
-    const name = ov.display_name ?? ov.appname ?? ov.strDisplayName ?? ov.name ?? `App ${appid}`;
-    seen.add(appid);
-    out.push({ appid, name: String(name), cover: resolveCover(ov) });
-  };
+  const push = (ov: any, forcedType?: number) => {
+	if (!ov) return;
+	const appid = Number(ov.appid ?? ov.m_unAppID ?? ov.nAppID ?? ov.unAppID);
+	if (!appid || Number.isNaN(appid) || seen.has(appid)) return;
+	const name = ov.display_name ?? ov.appname ?? ov.strDisplayName ?? ov.name ?? `App ${appid}`;
+	const hash = ov.icon_hash ?? ov.m_strIconHash;
+	const icon = hash ? `https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/${appid}/${hash}.jpg` : undefined;
+	seen.add(appid);
+	out.push({ appid, name: String(name), cover: resolveCover(ov), icon, appType: Number(ov.app_type ?? 0) || forcedType || 1 });
+};
   try {
     const cs: any = (window as any).collectionStore;
     const cols = [cs?.allGamesCollection, cs?.GetCollection?.('all-games'), cs?.GetCollection?.('local-install')];
     for (const col of cols) {
       const apps = col?.allApps ?? col?.visibleApps;
-      if (apps && typeof apps[Symbol.iterator] === 'function') for (const a of apps) push(a);
+      if (apps && typeof apps[Symbol.iterator] === 'function') for (const a of apps) push(a, 1);
     }
   } catch (e) { warn('collectionStore read failed', e); }
-  if (out.length === 0) {
-    try {
-      const m: any = (window as any).appStore?.m_mapApps;
-      if (m && typeof m.values === 'function') for (const ov of m.values()) push(ov);
-    } catch (e) { warn('appStore read failed', e); }
-  }
+const APP_TYPES = new Set([1, 2, 4, 8]);
+const collectionsWorked = out.length > 0;
+try {
+	const m: any = (window as any).appStore?.m_mapApps;
+	if (m && typeof m.values === 'function') {
+		for (const ov of m.values()) {
+			if (collectionsWorked && !APP_TYPES.has(Number(ov?.app_type ?? 0))) continue;
+			push(ov);
+		}
+	}
+} catch (e) { warn('appStore read failed', e); }
   out.sort((a, b) => a.name.localeCompare(b.name));
   return out;
 }
