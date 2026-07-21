@@ -652,13 +652,17 @@ function checkFocusOnce() {
 			});
 		}
 	} else if (pausedByBlur) {
-		pausedByBlur = false;
-		if (a && a.paused && currentAppId != null && !shouldSuppressPlayback(currentAppId)) {
+	pausedByBlur = false;
+	if (a && currentAppId != null && !shouldSuppressPlayback(currentAppId)) {
+		if (a.paused) {
 			void a.play()
 				.then(() => fadeTo(state.settings.volume, 0.5))
 				.catch(() => {});
+		} else {
+			fadeTo(state.settings.volume, 0.5);
 		}
 	}
+}
 }
 
 export function startFocusWatch() {
