@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.6.2](https://github.com/BambooFury/Game-Theme-Song/compare/v1.6.1...v1.6.2) (2026-07-21)
+
+
+### Bug Fixes
+
+* keep music playing on focus loss while a game runs with stop-on-launch off ([d34cdee](https://github.com/BambooFury/Game-Theme-Song/commit/d34cdee30d2324c2bbfe4a03958e8b266861fbef))
+* pause theme song when Steam loses focus ([fafaea9](https://github.com/BambooFury/Game-Theme-Song/commit/fafaea92a09aa697c378ec46096092f67b861c4f))
+* restore volume when Steam is refocused during fade-out ([125ace9](https://github.com/BambooFury/Game-Theme-Song/commit/125ace9237e3ad3b0f10b86bc00c6d5fd47a34e8))
+* show game names in downloaded music list for apps not in library ([83dfebd](https://github.com/BambooFury/Game-Theme-Song/commit/83dfebd371822b18c77ebc7cf40560523fe85945))
+* show software apps in custom music library so they can be ignored ([#41](https://github.com/BambooFury/Game-Theme-Song/issues/41)) ([284c208](https://github.com/BambooFury/Game-Theme-Song/commit/284c208ef58a93e7182e2a77671577f42e881a7b))
+* valid app icon urls, real app types and backfill cached game names ([be30559](https://github.com/BambooFury/Game-Theme-Song/commit/be30559ac66f0f2fd0467b4ed320d4a58d232a8d))
+
 ## [1.6.1](https://github.com/BambooFury/Game-Theme-Song/compare/v1.6.0...v1.6.1) (2026-07-03)
 
 
