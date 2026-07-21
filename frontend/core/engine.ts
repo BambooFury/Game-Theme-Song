@@ -642,6 +642,7 @@ function isAnySteamWindowFocused(): boolean {
 
 function checkFocusOnce() {
 	if (libWindowOpen || cacheWindowOpen) return;
+	if (!state.settings.stop_on_launch && (runningApps.size > 0 || Date.now() < recentLaunchUntil)) return;
 	const a = audioEl;
 	if (!isAnySteamWindowFocused()) {
 		if (a && !a.paused && !pausedByBlur) {
