@@ -19,12 +19,6 @@ export interface CacheInfo {
 }
 
 export interface LibApp {
-  appid: number;
-  name: string;
-  cover?: string;
-}
-
-export interface LibApp {
 	appid: number;
 	name: string;
 	cover?: string;

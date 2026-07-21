@@ -45,7 +45,7 @@ export function getLibraryApps(): LibApp[] {
 	const hash = ov.icon_hash ?? ov.m_strIconHash;
 	const icon = hash ? `https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/${appid}/${hash}.jpg` : undefined;
 	seen.add(appid);
-	out.push({ appid, name: String(name), cover: resolveCover(ov), icon, appType: forcedType ?? (Number(ov.app_type ?? 0) || 1) });
+	out.push({ appid, name: String(name), cover: resolveCover(ov), icon, appType: Number(ov.app_type ?? 0) || forcedType || 1 });
 };
   try {
     const cs: any = (window as any).collectionStore;

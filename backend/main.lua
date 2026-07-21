@@ -1032,7 +1032,7 @@ end
         
         local entry = cache[key]
         local NOT_FOUND_TTL = 6 * 3600
-if not force_refresh and not rerolling and entry and entry.not_found then
+    if not force_refresh and not rerolling and entry and entry.not_found then
     if (os.time() - (entry.ts or 0)) < NOT_FOUND_TTL then
         return json.encode({ ok = false, error = "not_found_cached" })
     end
@@ -1040,8 +1040,12 @@ if not force_refresh and not rerolling and entry and entry.not_found then
     entry = nil
 end
         if not force_refresh and not rerolling and entry and entry.file and fs and fs.exists and fs.exists(join(AUDIO_DIR, entry.file)) then
-            local url = LOOPBACK_BASE .. entry.file .. "?v=" .. tostring(entry.ts or 0)
-            return json.encode({ ok = true, url = url, title = entry.title, cached = true })
+        if (entry.name or "") == "" and game_name ~= "" then
+        entry.name = sanitize_text(game_name)
+        save_cache()
+        end
+        local url = LOOPBACK_BASE .. entry.file .. "?v=" .. tostring(entry.ts or 0)
+        return json.encode({ ok = true, url = url, title = entry.title, cached = true })
         end
         local target_slot = "a"
         if rerolling then
