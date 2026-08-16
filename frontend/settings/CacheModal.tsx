@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, memo } from 'react';
-import { ModalRoot, DialogHeader, DialogBody, DialogButton, TextField, showModal } from '@steambrew/client';
+import { ModalRoot, DialogHeader, DialogBody, DialogButton, DialogButtonSecondary, TextField, showModal } from '@steambrew/client';
 import { SETTINGS_CSS, SETTINGS_ICONS } from '../_assets.generated';
 import { warn } from '../core/log';
 import { base64ToUtf8 } from '../core/base64';
@@ -9,8 +9,7 @@ import type { CacheItem } from '../core/types';
 import { getLibraryApps } from './library';
 
 const TRASH_HTML = { __html: SETTINGS_ICONS.trash };
-const SUB_STYLE: React.CSSProperties = { margin: '0 0 10px', color: 'rgba(255,255,255,0.55)', fontSize: '12px' };
-const ERROR_STYLE: React.CSSProperties = { color: '#ff8175', textAlign: 'center', padding: '8px 0', fontSize: '12px' };
+const Icon: React.FC<{ html: { __html: string } }> = ({ html }) => <span dangerouslySetInnerHTML={html} />;
 const LIST_STYLE: React.CSSProperties = { height: '300px', overflowY: 'auto', padding: '10px 0' };
 
 function thumbCandidates(appid: number): string[] {
@@ -43,7 +42,11 @@ const CacheRow = memo(function CacheRow({ item, busy, onDelete }: CacheRowProps)
         <div className="gts-cache-name">{item.name}</div>
         <div className="gts-cache-meta">{item.title ? item.title + ' · ' : ''}{(item.bytes / 1048576).toFixed(1)} MB</div>
       </div>
-      <button className="gts-lib-mini gts-danger" disabled={busy} onClick={() => onDelete(item)} dangerouslySetInnerHTML={TRASH_HTML} />
+      <div className="gts-cache-del">
+        <DialogButtonSecondary className="gts-lib-mini gts-danger" disabled={busy} onClick={() => onDelete(item)}>
+          <Icon html={TRASH_HTML} />
+        </DialogButtonSecondary>
+      </div>
     </div>
   );
 });
@@ -153,11 +156,11 @@ const CacheModal: React.FC<CacheModalProps> = ({ closeModal }) => {
       <style>{SETTINGS_CSS}</style>
       <DialogHeader>Downloaded music</DialogHeader>
       <DialogBody>
-        <div style={SUB_STYLE}>{subText}</div>
+        <div className="gts-lib-sub">{subText}</div>
         {count > 0 && (
           <TextField label="Search" value={query} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setQuery(e.target.value)} />
         )}
-        {error && <div style={ERROR_STYLE}>{error}</div>}
+        {error && <div className="gts-lib-error">{error}</div>}
         <div style={LIST_STYLE} className="gts-cache-list">
           {items === null && <div className="gts-lib-loading">Loading…</div>}
           {items !== null && count === 0 && <div className="gts-lib-empty">Auto-downloaded themes will show up here.</div>}

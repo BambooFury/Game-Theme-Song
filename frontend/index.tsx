@@ -2,11 +2,13 @@ import { definePlugin, routerHook } from '@steambrew/client';
 import { loadSettingsOnce, startPolling, registerLaunchStop, unregisterLaunchStop, loadIgnoredOnce, startFocusWatch, stopFocusWatch } from './core/engine';
 import { SearchToast } from './core/SearchToast';
 import { SettingsContent } from './settings/SettingsContent';
+import { scheduleWelcome } from './core/WelcomeModal';
 
 export default definePlugin(() => {
 	void loadSettingsOnce();
 	void loadIgnoredOnce();
 	routerHook.addGlobalComponent('GTSSearchToast', SearchToast);
+	scheduleWelcome();
 	startPolling();
 	registerLaunchStop();
 	startFocusWatch();
