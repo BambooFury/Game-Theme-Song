@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback, memo } from 'react';
-import { ModalRoot, DialogHeader, DialogBody, TextField, showModal } from '@steambrew/client';
+import { ModalRoot, DialogHeader, DialogBody, DialogCheckbox, DialogButtonSecondary, TextField, showModal } from '@steambrew/client';
 import { SETTINGS_CSS, SETTINGS_ICONS } from '../_assets.generated';
 import { warn } from '../core/log';
 import { readFileBase64 } from '../core/base64';
@@ -10,21 +10,9 @@ import { ACCEPT_EXTS, MAX_UPLOAD_BYTES, MAX_CARDS, decodeCustomItems, getLibrary
 
 const TRASH_HTML = { __html: SETTINGS_ICONS.trash };
 const IGNORE_HTML = { __html: SETTINGS_ICONS.mute };
-const SUB_STYLE: React.CSSProperties = { margin: '0 0 10px', color: 'rgba(255,255,255,0.55)', fontSize: '12px' };
-const ERROR_STYLE: React.CSSProperties = { color: '#ff8175', textAlign: 'center', padding: '8px 0', fontSize: '12px' };
+const Icon: React.FC<{ html: { __html: string } }> = ({ html }) => <span dangerouslySetInnerHTML={html} />;
 const GRID_STYLE: React.CSSProperties = { height: '440px', overflowY: 'auto', padding: '10px 0' };
 const HIDDEN_STYLE: React.CSSProperties = { display: 'none' };
-const FILTER_ROW_STYLE: React.CSSProperties = { display: 'flex', gap: '6px', margin: '8px 0 0' };
-const filterBtnStyle = (active: boolean): React.CSSProperties => ({
-    padding: '4px 12px',
-    borderRadius: '4px',
-    fontSize: '12px',
-    cursor: 'pointer',
-    userSelect: 'none',
-    border: '1px solid rgba(255,255,255,0.15)',
-    background: active ? 'rgba(255,255,255,0.18)' : 'transparent',
-    color: active ? '#fff' : 'rgba(255,255,255,0.55)',
-});
 
 function initials(name: string): string {
     const words = name.replace(/[^\p{L}\p{N} ]/gu, '').trim().split(/\s+/);
@@ -117,20 +105,30 @@ const GameCard = memo(function GameCard({ app, customTitle, busy, ignored, onSet
                     />
                 )}
                 {hasCustom && <span className="gts-lib-badge">♪ Custom</span>}
-                <button
-                    type="button"
-                    className={'gts-lib-ignore' + (ignored ? ' gts-on' : '')}
-                    onClick={(e: React.MouseEvent<HTMLButtonElement>) => { e.preventDefault(); e.stopPropagation(); onToggleIgnore(app); }}
-                    dangerouslySetInnerHTML={IGNORE_HTML}
-                />
+                <div className={'gts-lib-ignore-wrap' + (ignored ? ' gts-on' : '')}>
+                    <DialogButtonSecondary
+                        className="gts-lib-ignore"
+                        onClick={(e: React.MouseEvent<HTMLButtonElement>) => { e.preventDefault(); e.stopPropagation(); onToggleIgnore(app); }}
+                    >
+                        <Icon html={IGNORE_HTML} />
+                    </DialogButtonSecondary>
+                </div>
             </div>
             <div className="gts-lib-card-body">
                 <div className="gts-lib-card-name">{app.name}</div>
                 <div className="gts-lib-card-actions">
-                    <button className="gts-lib-mini gts-primary" disabled={busy} onClick={() => onSet(app)}>
-                        {busy ? 'Saving\u2026' : hasCustom ? 'Replace' : 'Set music'}
-                    </button>
-                    {hasCustom && <button className="gts-lib-mini gts-danger" disabled={busy} onClick={() => onClear(app)} dangerouslySetInnerHTML={TRASH_HTML} />}
+                    <div className="gts-action-main">
+                        <DialogButtonSecondary className="gts-lib-mini" disabled={busy} onClick={() => onSet(app)}>
+                            {busy ? 'Saving\u2026' : hasCustom ? 'Replace' : 'Set music'}
+                        </DialogButtonSecondary>
+                    </div>
+                    {hasCustom && (
+                        <div className="gts-action-del">
+                            <DialogButtonSecondary className="gts-lib-mini gts-danger" disabled={busy} onClick={() => onClear(app)}>
+                                <Icon html={TRASH_HTML} />
+                            </DialogButtonSecondary>
+                        </div>
+                    )}
                 </div>
             </div>
         </div>
@@ -268,13 +266,16 @@ const LibraryModal: React.FC<LibraryModalProps> = ({ closeModal, onChanged }) =>
             <style>{SETTINGS_CSS}</style>
             <DialogHeader>Custom game music</DialogHeader>
             <DialogBody>
-                <div style={SUB_STYLE}>{subText}</div>
+                <div className="gts-lib-sub">{subText}</div>
                 <TextField label="Search" value={query} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setQuery(e.target.value)} />
-                <div style={FILTER_ROW_STYLE}>
-                    <div style={filterBtnStyle(!showAll)} onClick={() => setShowAll(false)}>Games</div>
-                    <div style={filterBtnStyle(showAll)} onClick={() => setShowAll(true)}>All apps</div>
-                </div>
-                {error && <div style={ERROR_STYLE}>{error}</div>}
+                <DialogCheckbox
+                    className="gts-lib-filter"
+                    label="Show software and tools"
+                    bottomSeparator="none"
+                    checked={showAll}
+                    onChange={setShowAll}
+                />
+                {error && <div className="gts-lib-error">{error}</div>}
                 <div style={GRID_STYLE} className="gts-lib-grid">
                     {apps === null && <div className="gts-lib-loading">Loading your library…</div>}
                     {apps !== null && shown.length === 0 && <div className="gts-lib-empty">No games match “{query}”.</div>}
