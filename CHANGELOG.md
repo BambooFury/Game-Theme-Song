@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.6.4](https://github.com/BambooFury/Game-Theme-Song/compare/v1.6.3...v1.6.4) (2026-08-16)
+
+
+### Refactoring
+
+* use native Steam UI components for popups and controls ([31ed5d5](https://github.com/BambooFury/Game-Theme-Song/commit/31ed5d5200f7d6c057629b4be0a31d9b24d94ce4))
+* use native Steam UI components for popups and controls ([1c143c2](https://github.com/BambooFury/Game-Theme-Song/commit/1c143c2e80c180fd3f05967e011a579543d7f46b))
+
 ## [1.6.3](https://github.com/BambooFury/Game-Theme-Song/compare/v1.6.2...v1.6.3) (2026-07-21)
 
 
