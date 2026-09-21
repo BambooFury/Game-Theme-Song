@@ -1,10 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { ButtonItem, SliderField, ToggleField } from '@steambrew/client';
+import { ButtonItem, SliderField, ToggleField } from 'millennium';
 import { warn } from '../core/log';
 import { getBackendSettings, setBackendSetting, getCacheInfo, getCustomList } from '../core/api';
 import { state, getAudioEl, setGlobalCustomCount, getCustomCount, subscribeCustomCount, subscribeCacheInfo } from '../core/engine';
-import { openLibraryWindow } from './LibraryModal';
-import { openCacheWindow } from './CacheModal';
+import { openManagerPopup } from './managerPopups';
 import type { CacheInfo } from '../core/types';
 
 const formatLimit = (sec: number) => {
@@ -74,14 +73,14 @@ export const SettingsContent: React.FC = () => {
     const vol = Math.max(0, Math.min(1, Math.round(p) / 100));
     setPercent(Math.round(vol * 100));
     state.settings.volume = vol;
-    void setBackendSetting({ key: 'volume', value: vol }).catch(e => warn('save volume failed', e));
+    void setBackendSetting('volume', vol).catch(e => warn('save volume failed', e));
     const a = getAudioEl();
     if (a && !a.paused) a.volume = vol;
   };
   const onLoop = (checked: boolean) => {
     setLoop(checked);
     state.settings.loop = checked;
-    void setBackendSetting({ key: 'loop', value: checked }).catch(e => warn('save loop failed', e));
+    void setBackendSetting('loop', checked).catch(e => warn('save loop failed', e));
     const a = getAudioEl();
     if (a) a.loop = checked;
   };
@@ -89,22 +88,22 @@ export const SettingsContent: React.FC = () => {
     const v = Math.max(0, Math.round(sec));
     setMaxSec(v);
     state.settings.max_seconds = v;
-    void setBackendSetting({ key: 'max_seconds', value: v }).catch(e => warn('save max_seconds failed', e));
+    void setBackendSetting('max_seconds', v).catch(e => warn('save max_seconds failed', e));
   };
   const onStopOnLaunch = (checked: boolean) => {
     setStopOnLaunch(checked);
     state.settings.stop_on_launch = checked;
-    void setBackendSetting({ key: 'stop_on_launch', value: checked }).catch(e => warn('save stop_on_launch failed', e));
+    void setBackendSetting('stop_on_launch', checked).catch(e => warn('save stop_on_launch failed', e));
   };
   const onManualSearch = (checked: boolean) => {
     setManualSearch(checked);
     state.settings.manual_search = checked;
-    void setBackendSetting({ key: 'manual_search', value: checked }).catch(e => warn('save manual_search failed', e));
+    void setBackendSetting('manual_search', checked).catch(e => warn('save manual_search failed', e));
   };
   const onConfirmDl = (checked: boolean) => {
     setConfirmDl(checked);
     state.settings.confirm_before_download = checked;
-    void setBackendSetting({ key: 'confirm_before_download', value: checked }).catch(e => warn('save confirm_before_download failed', e));
+    void setBackendSetting('confirm_before_download', checked).catch(e => warn('save confirm_before_download failed', e));
   };
   return (
     <>
@@ -116,7 +115,7 @@ export const SettingsContent: React.FC = () => {
           : customCount === 0
             ? 'Pick your own theme for any game — it plays before the auto search.'
             : `${customCount} ${customCount === 1 ? 'game uses' : 'games use'} your own track · plays first.`}
-        onClick={() => openLibraryWindow()}
+        onClick={() => openManagerPopup('library')}
       >
         Open
       </ButtonItem>
@@ -178,7 +177,7 @@ export const SettingsContent: React.FC = () => {
         layout="below"
         label="Downloaded music"
         description={cacheCount === null ? 'Checking…' : cacheCount === 0 ? 'Nothing downloaded yet.' : `${cacheCount} ${cacheCount === 1 ? 'track' : 'tracks'} · ${(cacheBytes / 1048576).toFixed(1)} MB on disk`}
-        onClick={() => openCacheWindow()}
+        onClick={() => openManagerPopup('cache')}
       >
         Manage
       </ButtonItem>

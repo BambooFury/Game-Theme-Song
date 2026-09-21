@@ -1,4 +1,4 @@
-import { ConfirmModal, DialogBodyText, showModal } from '@steambrew/client';
+import { ConfirmModal, DialogBodyText, showModal } from 'millennium';
 
 const SEEN_FLAG = 'gts_welcomed_v6';
 

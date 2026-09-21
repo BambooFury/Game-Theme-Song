@@ -1,319 +1,200 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback, memo } from 'react';
-import { ModalRoot, DialogHeader, DialogBody, DialogCheckbox, DialogButtonSecondary, TextField, showModal } from '@steambrew/client';
-import { SETTINGS_CSS, SETTINGS_ICONS } from '../_assets.generated';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { DialogBody, DialogBodyText, DialogButtonSecondary, DialogCheckbox, DialogHeader, Field, TextField } from 'millennium';
 import { warn } from '../core/log';
 import { readFileBase64 } from '../core/base64';
-import { getCustomList, clearCustomMusic, getIgnoredList } from '../core/api';
-import { reapplyForApp, setGlobalCustomCount, setAppIgnored } from '../core/engine';
-import type { LibApp, CustomMap } from '../core/types';
-import { ACCEPT_EXTS, MAX_UPLOAD_BYTES, MAX_CARDS, decodeCustomItems, getLibraryApps, uploadCustomMusic } from './library';
+import { clearCustomMusic, getCustomList, getIgnoredList } from '../core/api';
+import { reapplyForApp, setAppIgnored } from '../core/engine';
+import type { CustomMap, LibApp } from '../core/types';
+import { ACCEPT_EXTS, MAX_CARDS, MAX_UPLOAD_BYTES, decodeCustomItems, getLibraryApps, uploadCustomMusic } from './library';
 
-const TRASH_HTML = { __html: SETTINGS_ICONS.trash };
-const IGNORE_HTML = { __html: SETTINGS_ICONS.mute };
-const Icon: React.FC<{ html: { __html: string } }> = ({ html }) => <span dangerouslySetInnerHTML={html} />;
-const GRID_STYLE: React.CSSProperties = { height: '440px', overflowY: 'auto', padding: '10px 0' };
-const HIDDEN_STYLE: React.CSSProperties = { display: 'none' };
+const LIST_SCROLL: React.CSSProperties = { maxHeight: 'calc(100vh - 320px)', overflowY: 'auto' };
 
-function initials(name: string): string {
-    const words = name.replace(/[^\p{L}\p{N} ]/gu, '').trim().split(/\s+/);
-    return words.slice(0, 2).map((w) => w[0]?.toUpperCase() ?? '').join('') || '♪';
-}
+const ICON_STYLE: React.CSSProperties = { width: 32, height: 32, objectFit: 'cover', borderRadius: 2 };
 
-function placeholderStyle(appid: number): React.CSSProperties {
-    const hue = (appid * 137) % 360;
-    return {
-        width: '100%',
-        height: '100%',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: '10px',
-        padding: '10px',
-        boxSizing: 'border-box',
-        textAlign: 'center',
-        background: `linear-gradient(160deg, hsl(${hue}, 45%, 30%) 0%, hsl(${(hue + 40) % 360}, 50%, 14%) 100%)`,
-    };
-}
-
-const PH_ICON: React.CSSProperties = { width: '48px', height: '48px', borderRadius: '10px' };
-const PH_INITIALS: React.CSSProperties = { fontSize: '32px', fontWeight: 700, color: 'rgba(255,255,255,0.9)' };
-const PH_NAME: React.CSSProperties = { fontSize: '12px', color: 'rgba(255,255,255,0.75)', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as any };
-const COVER_LOADING: React.CSSProperties = {
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    width: '100%',
-    height: '100%',
-    objectFit: 'cover',
-    opacity: 0,
-    pointerEvents: 'none',
+/** Resolves the best available icon image for an app and hides it if it fails to load. */
+const AppIcon: React.FC<{ app: LibApp }> = ({ app }) => {
+  const src = app.icon ?? app.cover ?? `https://cdn.cloudflare.steamstatic.com/steam/apps/${app.appid}/capsule_236x69.jpg`;
+  return <img src={src} alt="" style={ICON_STYLE} loading="lazy" onError={(e) => { (e.currentTarget.style.display = 'none'); }} />;
 };
 
-function coverCandidates(app: LibApp): string[] {
-    const appid = app.appid;
-    const list: string[] = [];
-    if (app.cover) list.push(app.cover);
-    list.push(
-        'https://cdn.cloudflare.steamstatic.com/steam/apps/' + appid + '/library_600x900.jpg',
-        'https://steamcdn-a.akamaihd.net/steam/apps/' + appid + '/library_600x900.jpg',
-        'https://cdn.cloudflare.steamstatic.com/steam/apps/' + appid + '/capsule_616x353.jpg',
-        'https://cdn.cloudflare.steamstatic.com/steam/apps/' + appid + '/header.jpg',
-        'https://steamcdn-a.akamaihd.net/steam/apps/' + appid + '/header.jpg',
-    );
-    return list;
+interface GameRowProps {
+  app: LibApp;
+  customTitle?: string;
+  busy: boolean;
+  ignored: boolean;
+  onSet: (app: LibApp) => void;
+  onClear: (app: LibApp) => void;
+  onToggleIgnore: (app: LibApp) => void;
 }
 
-interface GameCardProps {
-    key?: React.Key;
-    app: LibApp;
-    customTitle?: string;
-    busy: boolean;
-    ignored: boolean;
-    onSet: (app: LibApp) => void;
-    onClear: (app: LibApp) => void;
-    onToggleIgnore: (app: LibApp) => void;
-}
-
-const GameCard = memo(function GameCard({ app, customTitle, busy, ignored, onSet, onClear, onToggleIgnore }: GameCardProps) {
-    const urls = useMemo(() => coverCandidates(app), [app.appid, app.cover]);
-    const [idx, setIdx] = useState(0);
-    const [loaded, setLoaded] = useState(false);
-    const [iconFailed, setIconFailed] = useState(false);
-    const failed = idx >= urls.length;
-    const hasCustom = customTitle !== undefined;
-    return (
-        <div className={'gts-lib-card' + (hasCustom ? ' gts-has-custom' : '') + (ignored ? ' gts-ignored' : '')}>
-            <div className="gts-lib-cover-wrap">
-                {!loaded && (
-                    <div className="gts-lib-fallback" style={placeholderStyle(app.appid)}>
-                        {app.icon && !iconFailed
-                            ? <img src={app.icon} style={PH_ICON} alt="" onError={() => setIconFailed(true)} />
-                            : <div style={PH_INITIALS}>{initials(app.name)}</div>}
-                        <div style={PH_NAME}>{app.name}</div>
-                    </div>
-                )}
-                {!failed && (
-                    <img
-                        className="gts-lib-cover"
-                        src={urls[idx]}
-                        alt=""
-                        decoding="async"
-                        style={loaded ? undefined : COVER_LOADING}
-                        onLoad={() => setLoaded(true)}
-                        onError={() => setIdx((i) => i + 1)}
-                    />
-                )}
-                {hasCustom && <span className="gts-lib-badge">♪ Custom</span>}
-                <div className={'gts-lib-ignore-wrap' + (ignored ? ' gts-on' : '')}>
-                    <DialogButtonSecondary
-                        className="gts-lib-ignore"
-                        onClick={(e: React.MouseEvent<HTMLButtonElement>) => { e.preventDefault(); e.stopPropagation(); onToggleIgnore(app); }}
-                    >
-                        <Icon html={IGNORE_HTML} />
-                    </DialogButtonSecondary>
-                </div>
-            </div>
-            <div className="gts-lib-card-body">
-                <div className="gts-lib-card-name">{app.name}</div>
-                <div className="gts-lib-card-actions">
-                    <div className="gts-action-main">
-                        <DialogButtonSecondary className="gts-lib-mini" disabled={busy} onClick={() => onSet(app)}>
-                            {busy ? 'Saving\u2026' : hasCustom ? 'Replace' : 'Set music'}
-                        </DialogButtonSecondary>
-                    </div>
-                    {hasCustom && (
-                        <div className="gts-action-del">
-                            <DialogButtonSecondary className="gts-lib-mini gts-danger" disabled={busy} onClick={() => onClear(app)}>
-                                <Icon html={TRASH_HTML} />
-                            </DialogButtonSecondary>
-                        </div>
-                    )}
-                </div>
-            </div>
-        </div>
-    );
-});
+const GameRow: React.FC<GameRowProps> = ({ app, customTitle, busy, ignored, onSet, onClear, onToggleIgnore }) => (
+  <Field
+    label={app.name}
+    description={customTitle ? `Custom track: ${customTitle}` : 'Uses automatic theme search.'}
+    icon={<AppIcon app={app} />}
+    childrenLayout="below"
+    childrenContainerWidth="max"
+  >
+    <DialogButtonSecondary style={{ padding: '4px 12px' }} disabled={busy} onClick={() => onSet(app)}>
+      {busy ? 'Saving…' : customTitle ? 'Replace music' : 'Set music'}
+    </DialogButtonSecondary>
+    {customTitle && (
+      <DialogButtonSecondary style={{ padding: '4px 12px' }} disabled={busy} onClick={() => onClear(app)}>
+        Remove custom music
+      </DialogButtonSecondary>
+    )}
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingTop: 16, pointerEvents: 'none' }}>
+      <div style={{ pointerEvents: 'auto' }}>
+        <DialogCheckbox
+          bottomSeparator="none"
+          checked={ignored}
+          onChange={() => onToggleIgnore(app)}
+        />
+      </div>
+      <DialogBodyText>Exclude from automatic search</DialogBodyText>
+    </div>
+  </Field>
+);
 
 interface LibraryModalProps {
-    closeModal?: () => void;
-    onChanged: (map: CustomMap) => void;
+  onChanged: (map: CustomMap) => void;
 }
 
-const LibraryModal: React.FC<LibraryModalProps> = ({ closeModal, onChanged }) => {
-    const [apps, setApps] = useState<LibApp[] | null>(null);
-    const [customMap, setCustomMap] = useState<CustomMap>({});
-    const [ignoredMap, setIgnoredMap] = useState<Record<string, boolean>>({});
-    const [query, setQuery] = useState('');
-    const [showAll, setShowAll] = useState(false);
-    const [busyId, setBusyId] = useState<number | null>(null);
-    const [error, setError] = useState<string | null>(null);
-    const fileRef = useRef<HTMLInputElement | null>(null);
-    const pendingApp = useRef<LibApp | null>(null);
-    const pickingRef = useRef(false);
+export const LibraryModalContent: React.FC<LibraryModalProps> = ({ onChanged }) => {
+  const [apps, setApps] = useState<LibApp[] | null>(null);
+  const [customMap, setCustomMap] = useState<CustomMap>({});
+  const [ignoredMap, setIgnoredMap] = useState<Record<string, boolean>>({});
+  const [query, setQuery] = useState('');
+  const [showAll, setShowAll] = useState(false);
+  const [busyId, setBusyId] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement | null>(null);
+  const pendingApp = useRef<LibApp | null>(null);
+  const customMapRef = useRef(customMap);
+  const ignoredRef = useRef(ignoredMap);
+  customMapRef.current = customMap;
+  ignoredRef.current = ignoredMap;
 
-    const close = () => { if (!pickingRef.current) closeModal?.(); };
+  useEffect(() => {
+    setApps(getLibraryApps());
+    void (async () => {
+      try {
+        const raw = await getCustomList();
+        const info = typeof raw === 'string' ? JSON.parse(raw) : raw;
+        if (info?.ok && info.items) setCustomMap(decodeCustomItems(info.items));
+      } catch (e) { warn('getCustomList failed', e); }
+      try {
+        const raw = await getIgnoredList();
+        const info = typeof raw === 'string' ? JSON.parse(raw) : raw;
+        if (info?.ok && info.items) setIgnoredMap({ ...info.items });
+      } catch (e) { warn('getIgnoredList failed', e); }
+    })();
+  }, []);
 
-    useEffect(() => {
-        setApps(getLibraryApps());
-        (async () => {
-            try {
-                const raw = await getCustomList();
-                const info = typeof raw === 'string' ? JSON.parse(raw) : raw;
-                if (info?.ok && info.items) setCustomMap(decodeCustomItems(info.items));
-            } catch (e) { warn('getCustomList failed', e); }
-            try {
-                const rawIgn = await getIgnoredList();
-                const ign = typeof rawIgn === 'string' ? JSON.parse(rawIgn) : rawIgn;
-                if (ign?.ok && ign.items) setIgnoredMap({ ...ign.items });
-            } catch (e) { warn('getIgnoredList failed', e); }
-        })();
-    }, []);
+  const updateCustomMap = (map: CustomMap) => {
+    setCustomMap(map);
+    onChanged(map);
+  };
 
-    const customMapRef = useRef(customMap);
-    customMapRef.current = customMap;
-    const ignoredRef = useRef(ignoredMap);
-    ignoredRef.current = ignoredMap;
+  const onSet = useCallback((app: LibApp) => {
+    setError(null);
+    pendingApp.current = app;
+    fileRef.current?.click();
+  }, []);
 
-    const commit = (map: CustomMap) => { setCustomMap(map); onChanged(map); };
+  const onFilePicked = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    const app = pendingApp.current;
+    pendingApp.current = null;
+    if (!file || !app) return;
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setError(`“${file.name}” is too large (maximum 50 MB).`);
+      return;
+    }
+    setBusyId(app.appid);
+    setError(null);
+    try {
+      const response = await uploadCustomMusic(app.appid, app.name, file.name, await readFileBase64(file));
+      if (!response?.ok) {
+        setError(`Couldn't set music: ${response?.error ?? 'unknown error'}.`);
+        return;
+      }
+      const next = { ...customMapRef.current, [String(app.appid)]: { title: file.name.replace(/\.[^.]+$/, ''), name: app.name } };
+      updateCustomMap(next);
+      void reapplyForApp(app.appid);
+    } catch (e) {
+      warn('set custom failed', e);
+      setError('Something went wrong while saving the file.');
+    } finally {
+      setBusyId(null);
+    }
+  };
 
-    const onSet = useCallback((app: LibApp) => {
-        setError(null);
-        pendingApp.current = app;
-        pickingRef.current = true;
-        const onFocus = () => {
-            window.removeEventListener('focus', onFocus);
-            setTimeout(() => { pickingRef.current = false; }, 500);
-        };
-        window.addEventListener('focus', onFocus);
-        fileRef.current?.click();
-    }, []);
+  const onClear = useCallback(async (app: LibApp) => {
+    setBusyId(app.appid);
+    setError(null);
+    try {
+      await clearCustomMusic(app.appid);
+      const next = { ...customMapRef.current };
+      delete next[String(app.appid)];
+      updateCustomMap(next);
+      void reapplyForApp(app.appid);
+    } catch (e) {
+      warn('clear custom failed', e);
+      setError('Could not remove the custom track.');
+    } finally {
+      setBusyId(null);
+    }
+  }, []);
 
-    const onFilePicked = async (ev: React.ChangeEvent<HTMLInputElement>) => {
-        pickingRef.current = false;
-        const file = ev.target.files?.[0];
-        ev.target.value = '';
-        const app = pendingApp.current;
-        pendingApp.current = null;
-        if (!file || !app) return;
-        if (file.size > MAX_UPLOAD_BYTES) { setError('"' + file.name + '" is too large (max 50 MB).'); return; }
-        setBusyId(app.appid);
-        setError(null);
-        try {
-            const data = await readFileBase64(file);
-            const resp = await uploadCustomMusic(app.appid, app.name, file.name, data);
-            if (!resp?.ok) { setError("Couldn't set music: " + (resp?.error ?? 'unknown error') + '.'); return; }
-            const nextMap = { ...customMapRef.current };
-            nextMap[String(app.appid)] = { title: file.name.replace(/\.[^.]+$/, ''), name: app.name };
-            commit(nextMap);
-            void reapplyForApp(app.appid);
-        } catch (e) {
-            warn('set custom failed', e);
-            const detail = e instanceof Error && e.message ? ': ' + e.message : '';
-            setError('Something went wrong while saving the file' + detail + '.');
-        } finally {
-            setBusyId(null);
-        }
-    };
+  const onToggleIgnore = useCallback(async (app: LibApp) => {
+    const key = String(app.appid);
+    const next = !ignoredRef.current[key];
+    if (!await setAppIgnored(app.appid, next)) {
+      setError('Could not update ignore state.');
+      return;
+    }
+    setIgnoredMap((map) => ({ ...map, [key]: next }));
+  }, []);
 
-    const onClear = useCallback(async (app: LibApp) => {
-        setBusyId(app.appid);
-        setError(null);
-        try {
-            await clearCustomMusic({ app_id: app.appid });
-            const next = { ...customMapRef.current };
-            delete next[String(app.appid)];
-            setCustomMap(next);
-            onChanged(next);
-            void reapplyForApp(app.appid);
-        } catch (e) {
-            warn('clear custom failed', e);
-            setError('Could not remove the custom track.');
-        } finally {
-            setBusyId(null);
-        }
-    }, [onChanged]);
+  const visible = useMemo(() => {
+    const pool = apps ?? [];
+    const filtered = showAll ? pool : pool.filter((app) => (app.appType ?? 1) === 1);
+    const normalizedQuery = query.trim().toLocaleLowerCase();
+    return filtered
+      .filter((app) => !normalizedQuery || app.name.toLocaleLowerCase().includes(normalizedQuery))
+      .sort((a, b) => Number(Boolean(customMap[String(a.appid)])) - Number(Boolean(customMap[String(b.appid)])) || a.name.localeCompare(b.name));
+  }, [apps, customMap, query, showAll]);
 
-    const onToggleIgnore = useCallback(async (app: LibApp) => {
-        const key = String(app.appid);
-        const next = !ignoredRef.current[key];
-        const ok = await setAppIgnored(app.appid, next);
-        if (!ok) { setError('Could not update ignore state.'); return; }
-        setIgnoredMap((m) => ({ ...m, [key]: next }));
-    }, []);
-
-    const visible = useMemo(() => {
-        if (!apps) return [];
-        const pool = showAll ? apps : apps.filter((a) => (a.appType ?? 1) === 1);
-        const q = query.trim().toLowerCase();
-        const filtered = q ? pool.filter((a) => a.name.toLowerCase().includes(q)) : pool;
-        return [...filtered].sort((a, b) => {
-            const ca = customMap[String(a.appid)] ? 0 : 1;
-            const cb = customMap[String(b.appid)] ? 0 : 1;
-            return ca - cb || a.name.localeCompare(b.name);
-        });
-    }, [apps, query, customMap, showAll]);
-
-    const customCount = Object.keys(customMap).length;
-    const shown = visible.slice(0, MAX_CARDS);
-
-    const subText = customCount > 0
-        ? customCount + ' ' + (customCount === 1 ? 'game uses' : 'games use') + ' your own track'
-        : 'Pick your own theme for any game \u2014 it always plays before the auto search.';
-
-    return (
-        <ModalRoot closeModal={close} onCancel={close} onEscKeypress={close}>
-            <style>{SETTINGS_CSS}</style>
-            <DialogHeader>Custom game music</DialogHeader>
-            <DialogBody>
-                <div className="gts-lib-sub">{subText}</div>
-                <TextField label="Search" value={query} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setQuery(e.target.value)} />
-                <DialogCheckbox
-                    className="gts-lib-filter"
-                    label="Show software and tools"
-                    bottomSeparator="none"
-                    checked={showAll}
-                    onChange={setShowAll}
-                />
-                {error && <div className="gts-lib-error">{error}</div>}
-                <div style={GRID_STYLE} className="gts-lib-grid">
-                    {apps === null && <div className="gts-lib-loading">Loading your library…</div>}
-                    {apps !== null && shown.length === 0 && <div className="gts-lib-empty">No games match “{query}”.</div>}
-                    {shown.map((app) => (
-                        <GameCard
-                            key={app.appid}
-                            app={app}
-                            customTitle={customMap[String(app.appid)]?.title}
-                            busy={busyId === app.appid}
-                            ignored={!!ignoredMap[String(app.appid)]}
-                            onSet={onSet}
-                            onClear={onClear}
-                            onToggleIgnore={onToggleIgnore}
-                        />
-                    ))}
-                </div>
-                <div className="gts-lib-foot">
-                    {visible.length > MAX_CARDS
-                        ? <>Showing first <b>{MAX_CARDS}</b> of {visible.length} — use search to narrow down.</>
-                        : <>Supported formats: <b>MP3, M4A, AAC, OGG, OPUS, WAV, FLAC</b> — up to <b>50 MB</b> per file.</>}
-                </div>
-                <input ref={fileRef} type="file" accept={ACCEPT_EXTS} style={HIDDEN_STYLE} onChange={onFilePicked} />
-            </DialogBody>
-        </ModalRoot>
-    );
+  const shown = visible.slice(0, MAX_CARDS);
+  return (
+    <>
+      <DialogHeader>Custom game music</DialogHeader>
+      <DialogBody>
+        <DialogBodyText>Choose a personal track for a game. It plays before automatic theme search.</DialogBodyText>
+        <TextField label="Search games" value={query} onChange={(event) => setQuery(event.target.value)} />
+        <DialogCheckbox label="Show software and tools" bottomSeparator="none" checked={showAll} onChange={setShowAll} />
+        {error && <DialogBodyText>{error}</DialogBodyText>}
+        <div style={LIST_SCROLL}>
+          {apps === null && <DialogBodyText>Loading your library…</DialogBodyText>}
+          {apps !== null && shown.length === 0 && <DialogBodyText>No games match “{query}”.</DialogBodyText>}
+          {shown.map((app) => (
+            <GameRow
+              key={app.appid}
+              app={app}
+              customTitle={customMap[String(app.appid)]?.title}
+              busy={busyId === app.appid}
+              ignored={Boolean(ignoredMap[String(app.appid)])}
+              onSet={onSet}
+              onClear={onClear}
+              onToggleIgnore={onToggleIgnore}
+            />
+          ))}
+          {visible.length > MAX_CARDS && <DialogBodyText>Showing the first {MAX_CARDS} games. Use search to narrow the list.</DialogBodyText>}
+        </div>
+        <input ref={fileRef} type="file" accept={ACCEPT_EXTS} hidden onChange={onFilePicked} />
+      </DialogBody>
+    </>
+  );
 };
-
-export function openLibraryWindow(): void {
-    let handle: ReturnType<typeof showModal> | null = null;
-    handle = showModal(
-        <LibraryModal onChanged={(map) => setGlobalCustomCount(Object.keys(map).length)} />,
-        window,
-        {
-            strTitle: 'Custom game music',
-            bNeverPopOut: true,
-            popupWidth: 920,
-            popupHeight: 680,
-        },
-    );
-    void handle;
-}
