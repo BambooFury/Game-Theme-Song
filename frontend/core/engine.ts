@@ -409,6 +409,16 @@ export function subscribeCacheWindow(fn: (open: boolean) => void): () => void {
   return () => { cacheWindowListeners = cacheWindowListeners.filter((x) => x !== fn); };
 }
 
+let mainWindowOpen = false;
+
+export function setMainWindowOpen(open: boolean) {
+  mainWindowOpen = open;
+}
+
+export function getMainWindowOpen(): boolean {
+  return mainWindowOpen;
+}
+
 let gCacheInfoListeners: ((info: CacheInfo) => void)[] = [];
 
 export function setGlobalCacheInfo(info: CacheInfo) {
@@ -678,7 +688,7 @@ function isAnySteamWindowFocused(): boolean {
 }
 
 function checkFocusOnce() {
-	if (libWindowOpen || cacheWindowOpen) return;
+	if (libWindowOpen || cacheWindowOpen || mainWindowOpen) return;
 	if (!state.settings.stop_on_launch && (runningApps.size > 0 || Date.now() < recentLaunchUntil)) return;
 	const a = audioEl;
 	if (!isAnySteamWindowFocused()) {

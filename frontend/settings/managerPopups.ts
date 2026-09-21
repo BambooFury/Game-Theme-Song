@@ -1,4 +1,4 @@
-import { setCacheWindowOpen, setLibWindowOpen } from '../core/engine';
+import { setCacheWindowOpen, setLibWindowOpen, setMainWindowOpen } from '../core/engine';
 
 export type ManagerPopup = 'library' | 'cache' | 'main';
 
@@ -20,6 +20,7 @@ export function openManagerPopup(kind: ManagerPopup): void {
   open = { ...open, [kind]: true };
   if (kind === 'library') setLibWindowOpen(true);
   if (kind === 'cache') setCacheWindowOpen(true);
+  if (kind === 'main') setMainWindowOpen(true);
   publish();
 }
 
@@ -28,5 +29,6 @@ export function closeManagerPopup(kind: ManagerPopup): void {
   open = { ...open, [kind]: false };
   if (kind === 'library') setLibWindowOpen(false);
   if (kind === 'cache') setCacheWindowOpen(false);
+  if (kind === 'main') setMainWindowOpen(false);
   publish();
 }
