@@ -1,9 +1,8 @@
-import React from 'react';
 import { findModule, Millennium } from 'millennium';
-import { MdMusicNote } from 'react-icons/md';
 import { openManagerPopup } from '../settings/managerPopups';
 
 const MUSIC_BTN_CLASS = 'gts-music-btn';
+const ICON_SVG = '<div style="display:flex;align-items:center;justify-content:center;height:100%;"><svg class="SVGIcon_Settings" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" style="width:1.2em;height:1.2em;"><path d="M18.622 3.217A1 1 0 0 1 19 4v11.667q0 .06-.007.121q.007.105.007.212a3 3 0 1 1-2-2.83V9.26l-8 1.867v6.876a3 3 0 1 1-2-2.832V6.333a1 1 0 0 1 .773-.974l10-2.333a1 1 0 0 1 .842.186z" fill="currentColor"/></svg></div>';
 
 let inPageClass = '';
 let btnContClass = '';
@@ -34,37 +33,26 @@ async function waitForElement(doc: Document, selector: string): Promise<Element 
   }
 }
 
-const MusicBtnIcon: React.FC = () => (
-  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
-    <MdMusicNote size={20} />
-  </div>
-);
-
-function injectButton(doc: Document): void {
+async function injectButton(doc: Document): Promise<void> {
   resolveClasses();
   if (!inPageClass || !btnContClass || !menuBtnClass) return;
 
-  const selector = `div.${inPageClass} div.${btnContClass} > div.${menuBtnClass}:not([role="button"])`;
-  let target: Element | null = null;
-  try { target = doc.querySelector(selector); } catch {}
+  if (doc.querySelector(`.${MUSIC_BTN_CLASS}`)) return;
 
-  if (target && !target.parentNode?.querySelector(`.${MUSIC_BTN_CLASS}`)) {
-    const btn = target.cloneNode(true) as HTMLElement;
-    btn.classList.add(MUSIC_BTN_CLASS);
-    const inner = btn.querySelector('*');
-    if (inner) {
-      const container = doc.createElement('div');
-      btn.replaceChild(container, inner);
-      const reactDom = (window as any).SP_REACTDOM;
-      if (reactDom?.createRoot) {
-        reactDom.createRoot(container).render(React.createElement(MusicBtnIcon));
-      }
-    }
-    target.parentNode?.insertBefore(btn, target.nextSibling);
-    btn.addEventListener('click', () => {
-      openManagerPopup('main');
-    });
+  const selector = `div.${inPageClass} div.${btnContClass} > div.${menuBtnClass}:not([role="button"])`;
+  const target = await waitForElement(doc, selector);
+  if (!target || !target.parentNode) return;
+
+  const btn = target.cloneNode(true) as Element;
+  btn.classList.add(MUSIC_BTN_CLASS);
+  const firstChild = btn.firstChild as Element | null;
+  if (firstChild) {
+    (firstChild as HTMLElement).innerHTML = ICON_SVG;
   }
+  target.parentNode.insertBefore(btn, target.nextSibling);
+  btn.addEventListener('click', () => {
+    openManagerPopup('main');
+  });
 }
 
 function injectNowPlaying(doc: Document): void {
@@ -92,34 +80,31 @@ function injectNowPlaying(doc: Document): void {
 }
 
 let hooked = false;
-let intervals: ReturnType<typeof setInterval>[] = [];
+
+async function renderApp(doc: Document): Promise<void> {
+  try {
+    await injectButton(doc);
+    injectNowPlaying(doc);
+  } catch {}
+}
 
 function setupForPopup(popup: any): void {
   const doc = popup?.m_popup?.document as Document | undefined;
   if (!doc) return;
 
-  const tryInject = () => {
-    if (!doc.querySelector(`.${MUSIC_BTN_CLASS}`)) {
-      injectButton(doc);
-    }
-    injectNowPlaying(doc);
-  };
-
-  setTimeout(tryInject, 2000);
-  const iv = setInterval(tryInject, 3000);
-  intervals.push(iv);
+  setTimeout(() => void renderApp(doc), 500);
 
   setTimeout(() => {
     const mwbm = (window as any).MainWindowBrowserManager;
     if (!mwbm?.m_browser?.on) return;
-    mwbm.m_browser.on('finished-request', () => {
+    mwbm.m_browser.on('finished-request', async () => {
       if (mwbm.m_lastLocation?.pathname?.startsWith('/library/app/')) {
-        tryInject();
+        await renderApp(doc);
         try {
           const capsule = doc.querySelector(`div.${topCapsuleClass}`);
           if (capsule && !(capsule as any).dataset?.gtsObserved) {
             (capsule as any).dataset.gtsObserved = '1';
-            new MutationObserver(() => tryInject()).observe(capsule.parentNode, {
+            new MutationObserver(() => void renderApp(doc)).observe(capsule.parentNode, {
               subtree: true,
               childList: true,
             });
@@ -145,7 +130,5 @@ export function setupGamePageButton(): void {
 }
 
 export function removeGamePageButton(): void {
-  for (const iv of intervals) clearInterval(iv);
-  intervals = [];
   hooked = false;
 }
