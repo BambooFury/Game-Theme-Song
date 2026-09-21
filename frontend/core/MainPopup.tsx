@@ -21,30 +21,83 @@ const formatLimit = (sec: number) => {
 
 type TabId = 'nowplaying' | 'settings' | 'cache' | 'library';
 
-const TAB_BTN_BASE: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: '6px',
-  padding: '8px 16px',
-  border: 'none',
-  background: 'transparent',
-  color: 'inherit',
-  cursor: 'pointer',
-  fontSize: '13px',
-  fontWeight: 400,
-  opacity: 0.5,
-  borderRadius: 4,
-  WebkitAppRegion: 'no-drag',
-};
-
-function tabBtnStyle(active: boolean): React.CSSProperties {
-  return {
-    ...TAB_BTN_BASE,
-    fontWeight: active ? 600 : 400,
-    opacity: active ? 1 : 0.5,
-    borderBottom: active ? '2px solid var(--color-online, #5dc26a)' : '2px solid transparent',
-  };
+const TAB_CSS = `
+.gts-tab {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 18px !important;
+  border: none !important;
+  border-bottom: 2px solid transparent !important;
+  border-radius: 4px 4px 0 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: inherit !important;
+  cursor: pointer;
+  font-size: 13px;
+  font-family: inherit;
+  font-weight: 400;
+  opacity: 0.55;
+  transition: background 0.15s ease, opacity 0.15s ease;
+  -webkit-app-region: no-drag;
 }
+.gts-tab:hover, .gts-tab:focus {
+  background: rgba(255,255,255,0.08) !important;
+  opacity: 0.85;
+}
+.gts-tab:active { background: rgba(255,255,255,0.14) !important; }
+.gts-tab-active {
+  opacity: 1 !important;
+  font-weight: 600 !important;
+  border-bottom-color: var(--color-online, #5dc26a) !important;
+}
+.gts-tab-active:hover { background: rgba(255,255,255,0.05) !important; }
+.gts-tab-count {
+  font-size: 10px;
+  opacity: 0.6;
+  background: rgba(255,255,255,0.1);
+  border-radius: 8px;
+  padding: 1px 6px;
+}
+.gts-row-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  align-self: stretch;
+}
+.gts-empty-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 40px 24px;
+  text-align: center;
+}
+.gts-empty-circle {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: rgba(103,193,245,0.1);
+  border: 1px solid rgba(103,193,245,0.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.gts-empty-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--main-text-color, #ffffff);
+}
+.gts-empty-body {
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--secondary-text-color, rgba(255,255,255,0.5));
+  max-width: 340px;
+}
+`;
 
 function NowPlayingTab(): React.JSX.Element {
   const [ctx, setCtx] = useState<ContextState>(getContext());
@@ -259,22 +312,31 @@ export const MainPopupContent: React.FC<MainPopupProps> = ({ onDismiss }) => {
   useEffect(() => subscribeCustomCount(setCustomCount), []);
   useEffect(() => subscribeCacheInfo((info: CacheInfo) => { setCacheCount(info.count); setCacheBytes(info.bytes); }), []);
 
+  useEffect(() => {
+    const id = 'gts-popup-styles';
+    if (document.getElementById(id)) return;
+    const style = document.createElement('style');
+    style.id = id;
+    style.textContent = TAB_CSS;
+    document.head.appendChild(style);
+  }, []);
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
-      <div style={{ display: 'flex', gap: '4px', padding: '10px 16px 0', flexShrink: 0, WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+      <div style={{ display: 'flex', gap: '6px', padding: '8px 16px 0', flexShrink: 0, WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
         {TABS.map((tab) => (
           <DialogButton
             key={tab.id}
-            style={tabBtnStyle(activeTab === tab.id)}
+            className={`gts-tab${activeTab === tab.id ? ' gts-tab-active' : ''}`}
             onClick={() => setActiveTab(tab.id)}
           >
             {tab.icon}
             {tab.label}
             {tab.id === 'library' && customCount != null && customCount > 0 && (
-              <span style={{ fontSize: '10px', opacity: 0.6, marginLeft: '2px' }}>{customCount}</span>
+              <span className="gts-tab-count">{customCount}</span>
             )}
             {tab.id === 'cache' && cacheCount != null && cacheCount > 0 && (
-              <span style={{ fontSize: '10px', opacity: 0.6, marginLeft: '2px' }}>{cacheCount}</span>
+              <span className="gts-tab-count">{cacheCount}</span>
             )}
           </DialogButton>
         ))}
