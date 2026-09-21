@@ -1,8 +1,9 @@
+import React from 'react';
 import { findModule, Millennium } from 'millennium';
+import { MdMusicNote } from 'react-icons/md';
 import { openManagerPopup } from '../settings/managerPopups';
 
 const MUSIC_BTN_CLASS = 'gts-music-btn';
-const ICON_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" style="width:1.2em;height:1.2em;" fill="currentColor"><path d="M18.622 3.217A1 1 0 0 1 19 4v11.667q0 .06-.007.121q.007.105.007.212a3 3 0 1 1-2-2.83V9.26l-8 1.867v6.876a3 3 0 1 1-2-2.832V6.333a1 1 0 0 1 .773-.974l10-2.333a1 1 0 0 1 .842.186z"/></svg>';
 
 let inPageClass = '';
 let btnContClass = '';
@@ -33,6 +34,12 @@ async function waitForElement(doc: Document, selector: string): Promise<Element 
   }
 }
 
+const MusicBtnIcon: React.FC = () => (
+  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+    <MdMusicNote size={20} />
+  </div>
+);
+
 function injectButton(doc: Document): void {
   resolveClasses();
   if (!inPageClass || !btnContClass || !menuBtnClass) return;
@@ -42,11 +49,16 @@ function injectButton(doc: Document): void {
   try { target = doc.querySelector(selector); } catch {}
 
   if (target && !target.parentNode?.querySelector(`.${MUSIC_BTN_CLASS}`)) {
-    const btn = target.cloneNode(true) as Element;
+    const btn = target.cloneNode(true) as HTMLElement;
     btn.classList.add(MUSIC_BTN_CLASS);
-    const firstChild = btn.firstChild as Element | null;
-    if (firstChild) {
-      firstChild.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;">${ICON_SVG}</div>`;
+    const inner = btn.querySelector('*');
+    if (inner) {
+      const container = doc.createElement('div');
+      btn.replaceChild(container, inner);
+      const reactDom = (window as any).SP_REACTDOM;
+      if (reactDom?.createRoot) {
+        reactDom.createRoot(container).render(React.createElement(MusicBtnIcon));
+      }
     }
     target.parentNode?.insertBefore(btn, target.nextSibling);
     btn.addEventListener('click', () => {

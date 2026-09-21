@@ -1,12 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { ButtonItem, DialogBody, DialogBodyText, DialogButton, DialogButtonSecondary, DialogHeader, Field, SliderField, ToggleField } from 'millennium';
-import { MdMusicNote, MdSkipNext, MdStop, MdCheck, MdSettings } from 'react-icons/md';
+import { ButtonItem, DialogBody, DialogBodyText, DialogButton, DialogButtonSecondary, DialogHeader, SliderField, ToggleField } from 'millennium';
+import { MdMusicNote, MdSkipNext, MdStop, MdCheckCircle, MdSettings, MdVolumeUp } from 'react-icons/md';
 import { warn } from './log';
 import { getBackendSettings, setBackendSetting, getCacheInfo, getCustomList } from './api';
 import {
   state, getAudioEl, setGlobalCustomCount, getCustomCount, subscribeCustomCount,
   subscribeCacheInfo, subscribeContext, getContext, subscribePlayback, isPlaying,
-  rerollCurrent, acceptCurrent, stopAudio, getPendingConfirmAppId, getPlaybackMode,
+  rerollCurrent, acceptCurrent, stopAudio, getPendingConfirmAppId,
 } from './engine';
 import { openManagerPopup } from '../settings/managerPopups';
 import type { CacheInfo, ContextState } from './types';
@@ -84,34 +84,41 @@ function NowPlayingTab(): React.JSX.Element {
             {timeLabel && <DialogBodyText>{timeLabel}</DialogBodyText>}
           </>
         )}
-        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: 12 }}>
-          {state.settings.manual_search && (mode === 'ready' || playing) && (
-            <DialogButtonSecondary
-              disabled={mode === 'searching'}
-              onClick={() => void rerollCurrent()}
-            >
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                <MdSkipNext size={16} />
-                Find another
-              </span>
-            </DialogButtonSecondary>
-          )}
-          {playing && (
-            <DialogButtonSecondary onClick={() => stopAudio(0.5)}>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                <MdStop size={16} />
-                Stop
-              </span>
-            </DialogButtonSecondary>
-          )}
-          {pending != null && (
-            <DialogButton onClick={() => acceptCurrent()}>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                <MdCheck size={16} />
-                Keep this song
-              </span>
-            </DialogButton>
-          )}
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: 12, alignItems: 'center' }}>
+          {pending != null ? (
+            <>
+              {state.settings.manual_search && (mode === 'ready' || playing) && (
+                <DialogButtonSecondary
+                  disabled={mode === 'searching'}
+                  onClick={() => void rerollCurrent()}
+                >
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                    <MdSkipNext size={16} />
+                    Find another
+                  </span>
+                </DialogButtonSecondary>
+              )}
+              {playing && (
+                <DialogButtonSecondary onClick={() => stopAudio(0.5)}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                    <MdStop size={16} />
+                    Stop
+                  </span>
+                </DialogButtonSecondary>
+              )}
+              <DialogButton onClick={() => acceptCurrent()}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                  <MdCheckCircle size={16} />
+                  Keep this song
+                </span>
+              </DialogButton>
+            </>
+          ) : playing && mode === 'ready' ? (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: 'var(--color-online, #5dc26a)' }}>
+              <MdCheckCircle size={18} />
+              <span style={{ fontSize: '13px' }}>Song saved</span>
+            </span>
+          ) : null}
         </div>
         {!hasGame && (
           <DialogBodyText>Open a game page in your library to see its theme music here.</DialogBodyText>
