@@ -25,7 +25,7 @@ const TAB_BTN_BASE: React.CSSProperties = {
   display: 'inline-flex',
   alignItems: 'center',
   gap: '6px',
-  padding: '6px 14px',
+  padding: '8px 16px',
   border: 'none',
   background: 'transparent',
   color: 'inherit',
@@ -261,9 +261,13 @@ export const MainPopupContent: React.FC<MainPopupProps> = ({ onDismiss }) => {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
-      <div style={{ display: 'flex', gap: '2px', padding: '8px 12px 0', flexShrink: 0, WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+      <div style={{ display: 'flex', gap: '4px', padding: '10px 16px 0', flexShrink: 0, WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
         {TABS.map((tab) => (
-          <button key={tab.id} type="button" style={tabBtnStyle(activeTab === tab.id)} onClick={() => setActiveTab(tab.id)}>
+          <DialogButton
+            key={tab.id}
+            style={tabBtnStyle(activeTab === tab.id)}
+            onClick={() => setActiveTab(tab.id)}
+          >
             {tab.icon}
             {tab.label}
             {tab.id === 'library' && customCount != null && customCount > 0 && (
@@ -272,7 +276,7 @@ export const MainPopupContent: React.FC<MainPopupProps> = ({ onDismiss }) => {
             {tab.id === 'cache' && cacheCount != null && cacheCount > 0 && (
               <span style={{ fontSize: '10px', opacity: 0.6, marginLeft: '2px' }}>{cacheCount}</span>
             )}
-          </button>
+          </DialogButton>
         ))}
       </div>
       <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
