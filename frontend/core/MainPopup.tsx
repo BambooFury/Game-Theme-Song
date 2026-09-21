@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { ButtonItem, DialogBody, DialogBodyText, DialogButton, DialogButtonSecondary, DialogHeader, SliderField, ToggleField } from 'millennium';
-import { MdMusicNote, MdSkipNext, MdStop, MdCheckCircle, MdSettings, MdVolumeUp } from 'react-icons/md';
+import { MdMusicNote, MdSkipNext, MdStop, MdCheckCircle, MdSettings, MdLibraryMusic, MdDownload } from 'react-icons/md';
 import { warn } from './log';
 import { getBackendSettings, setBackendSetting, getCacheInfo, getCustomList } from './api';
 import {
@@ -9,6 +9,8 @@ import {
   rerollCurrent, acceptCurrent, stopAudio, getPendingConfirmAppId,
 } from './engine';
 import { openManagerPopup } from '../settings/managerPopups';
+import { LibraryModalContent } from '../settings/LibraryModal';
+import { CacheModalContent } from '../settings/CacheModal';
 import type { CacheInfo, ContextState } from './types';
 
 const formatLimit = (sec: number) => {
@@ -24,6 +26,8 @@ const TAB_BTN: React.CSSProperties = {
   zIndex: 2,
   WebkitAppRegion: 'no-drag',
 };
+
+type TabId = 'nowplaying' | 'settings' | 'library' | 'cache';
 
 function NowPlayingTab(): React.JSX.Element {
   const [ctx, setCtx] = useState<ContextState>(getContext());
@@ -135,32 +139,8 @@ function SettingsTab(): React.JSX.Element {
   const [stopOnLaunch, setStopOnLaunch] = useState(state.settings.stop_on_launch);
   const [manualSearch, setManualSearch] = useState(state.settings.manual_search);
   const [confirmDl, setConfirmDl] = useState(state.settings.confirm_before_download);
-  const [cacheCount, setCacheCount] = useState<number | null>(null);
-  const [cacheBytes, setCacheBytes] = useState(0);
-  const [customCount, setCustomCount] = useState<number | null>(getCustomCount());
-
-  useEffect(() => subscribeCustomCount(setCustomCount), []);
-  useEffect(() => subscribeCacheInfo((info: CacheInfo) => { setCacheCount(info.count); setCacheBytes(info.bytes); }), []);
-
-  const refreshCustomCount = async () => {
-    try {
-      const raw = await getCustomList();
-      const info = typeof raw === 'string' ? JSON.parse(raw) : raw;
-      if (info?.ok) setGlobalCustomCount(Object.keys(info.items ?? {}).length);
-    } catch (e) { warn('failed to load custom list', e); }
-  };
-
-  const refreshCacheInfo = async () => {
-    try {
-      const raw = await getCacheInfo();
-      const info = typeof raw === 'string' ? JSON.parse(raw) : raw;
-      if (info?.ok) { setCacheCount(info.count ?? 0); setCacheBytes(info.bytes ?? 0); }
-    } catch (e) { warn('failed to load cache info', e); }
-  };
 
   useEffect(() => {
-    void refreshCacheInfo();
-    void refreshCustomCount();
     (async () => {
       try {
         const raw = await getBackendSettings();
@@ -224,18 +204,6 @@ function SettingsTab(): React.JSX.Element {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '12px 16px' }}>
-      <ButtonItem
-        layout="below"
-        label="Custom game music"
-        description={customCount === null
-          ? 'Choose your own theme for any game in your library.'
-          : customCount === 0
-            ? 'Pick your own theme for any game — it plays before the auto search.'
-            : `${customCount} ${customCount === 1 ? 'game uses' : 'games use'} your own track · plays first.`}
-        onClick={() => openManagerPopup('library')}
-      >
-        Open
-      </ButtonItem>
       <SliderField
         label="Music volume"
         description={percent > 0 ? 'Background theme music volume.' : 'Theme music is muted.'}
@@ -290,48 +258,56 @@ function SettingsTab(): React.JSX.Element {
         checked={stopOnLaunch}
         onChange={onStopOnLaunch}
       />
-      <ButtonItem
-        layout="below"
-        label="Downloaded music"
-        description={cacheCount === null ? 'Checking…' : cacheCount === 0 ? 'Nothing downloaded yet.' : `${cacheCount} ${cacheCount === 1 ? 'track' : 'tracks'} · ${(cacheBytes / 1048576).toFixed(1)} MB on disk`}
-        onClick={() => openManagerPopup('cache')}
-      >
-        Manage
-      </ButtonItem>
     </div>
   );
 }
+
+const TABS: { id: TabId; label: string; icon: React.ReactNode }[] = [
+  { id: 'nowplaying', label: 'Now Playing', icon: <MdMusicNote size={16} /> },
+  { id: 'settings', label: 'Settings', icon: <MdSettings size={15} /> },
+  { id: 'cache', label: 'Downloaded', icon: <MdDownload size={16} /> },
+  { id: 'library', label: 'Custom Music', icon: <MdLibraryMusic size={16} /> },
+];
 
 interface MainPopupProps {
   onDismiss: () => void;
 }
 
 export const MainPopupContent: React.FC<MainPopupProps> = ({ onDismiss }) => {
-  const [activeTab, setActiveTab] = useState<'nowplaying' | 'settings'>('nowplaying');
+  const [activeTab, setActiveTab] = useState<TabId>('nowplaying');
+  const [customCount, setCustomCount] = useState<number | null>(getCustomCount());
+  const [cacheCount, setCacheCount] = useState<number | null>(null);
+  const [cacheBytes, setCacheBytes] = useState(0);
+
+  useEffect(() => subscribeCustomCount(setCustomCount), []);
+  useEffect(() => subscribeCacheInfo((info: CacheInfo) => { setCacheCount(info.count); setCacheBytes(info.bytes); }), []);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, paddingTop: '8px' }}>
-      <div style={{ display: 'flex', gap: '6px', padding: '0 16px 4px', position: 'relative', zIndex: 10, WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
-        <DialogButton
-          style={{ ...TAB_BTN, fontWeight: activeTab === 'nowplaying' ? 700 : 400, opacity: activeTab === 'nowplaying' ? 1 : 0.6 }}
-          onClick={() => setActiveTab('nowplaying')}
-        >
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '7px' }}>
-            <MdMusicNote size={16} />
-            Now Playing
-          </span>
-        </DialogButton>
-        <DialogButton
-          style={{ ...TAB_BTN, fontWeight: activeTab === 'settings' ? 700 : 400, opacity: activeTab === 'settings' ? 1 : 0.6 }}
-          onClick={() => setActiveTab('settings')}
-        >
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '7px' }}>
-            <MdSettings size={15} />
-            Settings
-          </span>
-        </DialogButton>
+      <div style={{ display: 'flex', gap: '6px', padding: '0 16px 4px', flexWrap: 'wrap', position: 'relative', zIndex: 10, WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+        {TABS.map((tab) => (
+          <DialogButton
+            key={tab.id}
+            style={{ ...TAB_BTN, fontWeight: activeTab === tab.id ? 700 : 400, opacity: activeTab === tab.id ? 1 : 0.6 }}
+            onClick={() => setActiveTab(tab.id)}
+          >
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '7px' }}>
+              {tab.icon}
+              {tab.label}
+              {tab.id === 'library' && customCount != null && customCount > 0 && (
+                <span style={{ fontSize: '10px', opacity: 0.6 }}>{customCount}</span>
+              )}
+              {tab.id === 'cache' && cacheCount != null && cacheCount > 0 && (
+                <span style={{ fontSize: '10px', opacity: 0.6 }}>{cacheCount}</span>
+              )}
+            </span>
+          </DialogButton>
+        ))}
       </div>
-      {activeTab === 'nowplaying' ? <NowPlayingTab /> : <SettingsTab />}
+      {activeTab === 'nowplaying' && <NowPlayingTab />}
+      {activeTab === 'settings' && <SettingsTab />}
+      {activeTab === 'library' && <LibraryModalContent onChanged={(map) => setGlobalCustomCount(Object.keys(map).length)} />}
+      {activeTab === 'cache' && <CacheModalContent />}
     </div>
   );
 };
