@@ -1,8 +1,8 @@
 import { setCacheWindowOpen, setLibWindowOpen } from '../core/engine';
 
-export type ManagerPopup = 'library' | 'cache';
+export type ManagerPopup = 'library' | 'cache' | 'main';
 
-let open: Record<ManagerPopup, boolean> = { library: false, cache: false };
+let open: Record<ManagerPopup, boolean> = { library: false, cache: false, main: false };
 let listeners: ((state: Record<ManagerPopup, boolean>) => void)[] = [];
 
 function publish() {

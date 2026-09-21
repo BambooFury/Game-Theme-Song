@@ -1,9 +1,17 @@
-import { definePlugin, routerHook } from 'millennium';
+import { definePlugin, routerHook, ButtonItem } from 'millennium';
+import React from 'react';
 import { loadSettingsOnce, startPolling, registerLaunchStop, unregisterLaunchStop, loadIgnoredOnce, startFocusWatch, stopFocusWatch } from './core/engine';
 import { SearchToast } from './core/SearchToast';
 import { ManagerWindows } from './core/ManagerWindows';
-import { SettingsContent } from './settings/SettingsContent';
+import { setupGamePageButton, removeGamePageButton } from './core/GamePageButton';
 import { scheduleWelcome } from './core/WelcomeModal';
+import { openManagerPopup } from './settings/managerPopups';
+
+const SettingsContent: React.FC = () => (
+  <ButtonItem layout="below" label="Open Game Theme Song" description="Open the theme song popup to control playback and settings." onClick={() => openManagerPopup('main')}>
+    Open
+  </ButtonItem>
+);
 
 export default definePlugin(() => {
 	void loadSettingsOnce();
@@ -14,6 +22,7 @@ export default definePlugin(() => {
 	startPolling();
 	registerLaunchStop();
 	startFocusWatch();
+	setupGamePageButton();
 	return {
 		title: 'Game Theme Song',
 		icon: <></>,
@@ -23,6 +32,7 @@ export default definePlugin(() => {
 			routerHook.removeGlobalComponent('GTSManagerWindows');
 			unregisterLaunchStop();
 			stopFocusWatch();
+			removeGamePageButton();
 		},
 	};
 });

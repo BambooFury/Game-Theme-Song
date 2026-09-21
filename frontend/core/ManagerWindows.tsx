@@ -4,17 +4,28 @@ import { setGlobalCustomCount } from './engine';
 import { closeManagerPopup, subscribeManagerPopups, type ManagerPopup } from '../settings/managerPopups';
 import { LibraryModalContent } from '../settings/LibraryModal';
 import { CacheModalContent } from '../settings/CacheModal';
+import { MainPopupContent } from './MainPopup';
 
-/**
- * Manager windows rendered as native Steam popups. Mounted once in the main
- * window via routerHook so the popups outlive the Millennium settings panel.
- */
 export const ManagerWindows: React.FC = () => {
-  const [popups, setPopups] = useState<Record<ManagerPopup, boolean>>({ library: false, cache: false });
+  const [popups, setPopups] = useState<Record<ManagerPopup, boolean>>({ library: false, cache: false, main: false });
   useEffect(() => subscribeManagerPopups(setPopups), []);
 
   return (
     <>
+      {popups.main && (
+        <SteamDialog
+          strTitle="Game Theme Song"
+          onDismiss={() => closeManagerPopup('main')}
+          popupWidth={520}
+          popupHeight={Math.round(window.innerHeight * 0.7)}
+          minWidth={420}
+          minHeight={380}
+          resizable
+          saveDimensionsKey="gtsMainPopup"
+        >
+          <MainPopupContent onDismiss={() => closeManagerPopup('main')} />
+        </SteamDialog>
+      )}
       {popups.library && (
         <SteamDialog
           strTitle="Custom game music"

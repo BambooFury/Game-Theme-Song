@@ -1,4 +1,4 @@
-import type { Settings, CacheInfo } from './types';
+import type { Settings, CacheInfo, ContextState, PlaybackMode } from './types';
 import { getThemeAudio, rerollTheme, invalidateAudio, getBackendSettings, getIgnoredList, setIgnoredBackend } from './api';
 import { warn } from './log';
 
@@ -167,14 +167,6 @@ async function resolveGameName(appId: number): Promise<string | null> {
     delay = Math.min(delay * 2, 500);
   }
   return name;
-}
-
-export type PlaybackMode = 'off' | 'searching' | 'ready';
-export interface ContextState {
-  mode: PlaybackMode;
-  title: string | null;
-  gameName: string | null;
-  appId: number | null;
 }
 
 let playbackMode: PlaybackMode = 'off';
