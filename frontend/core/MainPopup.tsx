@@ -1,14 +1,13 @@
 import React, { useEffect, useState } from 'react';
-import { ButtonItem, DialogBody, DialogBodyText, DialogButton, DialogButtonSecondary, DialogHeader, SliderField, ToggleField } from 'millennium';
-import { MdMusicNote, MdSkipNext, MdStop, MdCheckCircle, MdSettings, MdLibraryMusic, MdDownload } from 'react-icons/md';
+import { DialogBody, DialogBodyText, DialogButton, DialogButtonSecondary, DialogHeader, SliderField, ToggleField } from 'millennium';
+import { MdMusicNote, MdSkipNext, MdStop, MdCheckCircle, MdSettings, MdLibraryMusic, MdDownload, MdSearch } from 'react-icons/md';
 import { warn } from './log';
-import { getBackendSettings, setBackendSetting, getCacheInfo, getCustomList } from './api';
+import { getBackendSettings, setBackendSetting } from './api';
 import {
   state, getAudioEl, setGlobalCustomCount, getCustomCount, subscribeCustomCount,
   subscribeCacheInfo, subscribeContext, getContext, subscribePlayback, isPlaying,
   rerollCurrent, acceptCurrent, stopAudio, getPendingConfirmAppId,
 } from './engine';
-import { openManagerPopup } from '../settings/managerPopups';
 import { LibraryModalContent } from '../settings/LibraryModal';
 import { CacheModalContent } from '../settings/CacheModal';
 import type { CacheInfo, ContextState } from './types';
@@ -20,14 +19,32 @@ const formatLimit = (sec: number) => {
   return m > 0 ? `${m}:${String(s).padStart(2, '0')}` : `${s}s`;
 };
 
-const TAB_BTN: React.CSSProperties = {
-  padding: '10px 18px',
-  position: 'relative',
-  zIndex: 2,
+type TabId = 'nowplaying' | 'settings' | 'cache' | 'library';
+
+const TAB_BTN_BASE: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: '6px',
+  padding: '6px 14px',
+  border: 'none',
+  background: 'transparent',
+  color: 'inherit',
+  cursor: 'pointer',
+  fontSize: '13px',
+  fontWeight: 400,
+  opacity: 0.5,
+  borderRadius: 4,
   WebkitAppRegion: 'no-drag',
 };
 
-type TabId = 'nowplaying' | 'settings' | 'library' | 'cache';
+function tabBtnStyle(active: boolean): React.CSSProperties {
+  return {
+    ...TAB_BTN_BASE,
+    fontWeight: active ? 600 : 400,
+    opacity: active ? 1 : 0.5,
+    borderBottom: active ? '2px solid var(--color-online, #5dc26a)' : '2px solid transparent',
+  };
+}
 
 function NowPlayingTab(): React.JSX.Element {
   const [ctx, setCtx] = useState<ContextState>(getContext());
@@ -54,8 +71,9 @@ function NowPlayingTab(): React.JSX.Element {
   const mode = ctx.mode;
   const hasGame = ctx.appId != null && ctx.gameName != null;
   const showProgress = playing && duration > 0;
+  const searching = mode === 'searching';
 
-  const statusText = mode === 'searching'
+  const statusText = searching
     ? 'Searching for theme music…'
     : playing
       ? `Playing: ${ctx.title ?? 'theme music'}`
@@ -71,63 +89,70 @@ function NowPlayingTab(): React.JSX.Element {
     : null;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '12px 16px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', padding: '16px', minHeight: 0, flex: 1 }}>
       <DialogHeader>
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
           <MdMusicNote size={18} />
           {ctx.gameName ?? 'No game open'}
         </span>
       </DialogHeader>
-      <DialogBody>
-        <DialogBodyText>{statusText}</DialogBodyText>
-        {showProgress && (
-          <>
-            <div style={{ width: '100%', height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.1)', margin: '8px 0 4px' }}>
-              <div style={{ width: `${pct}%`, height: '100%', borderRadius: 2, background: 'var(--color-online, #5dc26a)' }} />
-            </div>
-            {timeLabel && <DialogBodyText>{timeLabel}</DialogBodyText>}
-          </>
-        )}
-        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: 12, alignItems: 'center' }}>
-          {pending != null ? (
-            <>
-              {state.settings.manual_search && (mode === 'ready' || playing) && (
-                <DialogButtonSecondary
-                  disabled={mode === 'searching'}
-                  onClick={() => void rerollCurrent()}
-                >
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                    <MdSkipNext size={16} />
-                    Find another
-                  </span>
-                </DialogButtonSecondary>
-              )}
-              {playing && (
-                <DialogButtonSecondary onClick={() => stopAudio(0.5)}>
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                    <MdStop size={16} />
-                    Stop
-                  </span>
-                </DialogButtonSecondary>
-              )}
-              <DialogButton onClick={() => acceptCurrent()}>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                  <MdCheckCircle size={16} />
-                  Keep this song
-                </span>
-              </DialogButton>
-            </>
-          ) : playing && mode === 'ready' ? (
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: 'var(--color-online, #5dc26a)' }}>
-              <MdCheckCircle size={18} />
-              <span style={{ fontSize: '13px' }}>Song saved</span>
-            </span>
-          ) : null}
+      {searching ? (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '14px', flex: 1, padding: '40px 0' }}>
+          <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: 'rgba(103,193,245,0.1)', border: '1px solid rgba(103,193,245,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <MdSearch size={28} style={{ color: '#67c1f5', opacity: 0.7 }} />
+          </div>
+          <div style={{ fontSize: '15px', fontWeight: 600, color: 'var(--main-text-color, #fff)' }}>Searching for theme music</div>
+          <div style={{ fontSize: '12px', color: 'var(--secondary-text-color, rgba(255,255,255,0.5))' }}>Looking for a track for this game…</div>
         </div>
-        {!hasGame && (
-          <DialogBodyText>Open a game page in your library to see its theme music here.</DialogBodyText>
-        )}
-      </DialogBody>
+      ) : (
+        <DialogBody>
+          <DialogBodyText>{statusText}</DialogBodyText>
+          {showProgress && (
+            <>
+              <div style={{ width: '100%', height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.1)', margin: '8px 0 4px' }}>
+                <div style={{ width: `${pct}%`, height: '100%', borderRadius: 2, background: 'var(--color-online, #5dc26a)', transition: 'width 0.5s linear' }} />
+              </div>
+              {timeLabel && <DialogBodyText>{timeLabel}</DialogBodyText>}
+            </>
+          )}
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: 12, alignItems: 'center' }}>
+            {pending != null ? (
+              <>
+                {state.settings.manual_search && (mode === 'ready' || playing) && (
+                  <DialogButtonSecondary disabled={false} onClick={() => void rerollCurrent()}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                      <MdSkipNext size={16} />
+                      Find another
+                    </span>
+                  </DialogButtonSecondary>
+                )}
+                {playing && (
+                  <DialogButtonSecondary onClick={() => stopAudio(0.5)}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                      <MdStop size={16} />
+                      Stop
+                    </span>
+                  </DialogButtonSecondary>
+                )}
+                <DialogButton onClick={() => acceptCurrent()}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                    <MdCheckCircle size={16} />
+                    Keep this song
+                  </span>
+                </DialogButton>
+              </>
+            ) : playing && mode === 'ready' ? (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: 'var(--color-online, #5dc26a)' }}>
+                <MdCheckCircle size={18} />
+                <span style={{ fontSize: '13px' }}>Song saved</span>
+              </span>
+            ) : null}
+          </div>
+          {!hasGame && (
+            <DialogBodyText>Open a game page in your library to see its theme music here.</DialogBodyText>
+          )}
+        </DialogBody>
+      )}
     </div>
   );
 }
@@ -203,70 +228,22 @@ function SettingsTab(): React.JSX.Element {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '12px 16px' }}>
-      <SliderField
-        label="Music volume"
-        description={percent > 0 ? 'Background theme music volume.' : 'Theme music is muted.'}
-        value={percent}
-        min={0}
-        max={100}
-        step={1}
-        showValue
-        editableValue
-        valueSuffix="%"
-        onChange={onSlider}
-      />
-      <SliderField
-        label="Song length limit"
-        description={maxSec > 0
-          ? (loop ? `The song restarts after ${formatLimit(maxSec)}.` : `The song stops after ${formatLimit(maxSec)}.`)
-          : 'The full song plays.'}
-        value={maxSec}
-        min={0}
-        max={300}
-        step={5}
-        showValue
-        editableValue
-        valueSuffix="s"
-        onChange={onLimit}
-      />
-      <ToggleField
-        label="Loop song"
-        description={loop ? 'The theme song repeats while you stay on the game page.' : 'The theme song plays once and stops.'}
-        checked={loop}
-        onChange={onLoop}
-      />
-      <ToggleField
-        label="Manual song search"
-        description={manualSearch
-          ? 'When a theme is found, use the skip button to pick a different song.'
-          : 'Classic mode — just play the first theme found, no skip button.'}
-        checked={manualSearch}
-        onChange={onManualSearch}
-      />
-      <ToggleField
-        label="Keep songs only after keeping"
-        description={confirmDl
-          ? 'A found song is deleted if you leave the page without keeping it.'
-          : 'Every found song stays in the download cache automatically.'}
-        checked={confirmDl}
-        onChange={onConfirmDl}
-      />
-      <ToggleField
-        label="Stop on game launch"
-        description={stopOnLaunch ? 'Theme music stops when you launch a game.' : 'Theme music keeps playing when a game starts.'}
-        checked={stopOnLaunch}
-        onChange={onStopOnLaunch}
-      />
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '16px', overflowY: 'auto', flex: 1, minHeight: 0 }}>
+      <SliderField label="Music volume" description={percent > 0 ? 'Background theme music volume.' : 'Theme music is muted.'} value={percent} min={0} max={100} step={1} showValue editableValue valueSuffix="%" onChange={onSlider} />
+      <SliderField label="Song length limit" description={maxSec > 0 ? (loop ? `The song restarts after ${formatLimit(maxSec)}.` : `The song stops after ${formatLimit(maxSec)}.`) : 'The full song plays.'} value={maxSec} min={0} max={300} step={5} showValue editableValue valueSuffix="s" onChange={onLimit} />
+      <ToggleField label="Loop song" description={loop ? 'The theme song repeats while you stay on the game page.' : 'The theme song plays once and stops.'} checked={loop} onChange={onLoop} />
+      <ToggleField label="Manual song search" description={manualSearch ? 'When a theme is found, use the skip button to pick a different song.' : 'Classic mode — just play the first theme found, no skip button.'} checked={manualSearch} onChange={onManualSearch} />
+      <ToggleField label="Keep songs only after keeping" description={confirmDl ? 'A found song is deleted if you leave the page without keeping it.' : 'Every found song stays in the download cache automatically.'} checked={confirmDl} onChange={onConfirmDl} />
+      <ToggleField label="Stop on game launch" description={stopOnLaunch ? 'Theme music stops when you launch a game.' : 'Theme music keeps playing when a game starts.'} checked={stopOnLaunch} onChange={onStopOnLaunch} />
     </div>
   );
 }
 
 const TABS: { id: TabId; label: string; icon: React.ReactNode }[] = [
-  { id: 'nowplaying', label: 'Now Playing', icon: <MdMusicNote size={16} /> },
-  { id: 'settings', label: 'Settings', icon: <MdSettings size={15} /> },
-  { id: 'cache', label: 'Downloaded', icon: <MdDownload size={16} /> },
-  { id: 'library', label: 'Custom Music', icon: <MdLibraryMusic size={16} /> },
+  { id: 'nowplaying', label: 'Now Playing', icon: <MdMusicNote size={15} /> },
+  { id: 'settings', label: 'Settings', icon: <MdSettings size={14} /> },
+  { id: 'cache', label: 'Downloaded', icon: <MdDownload size={15} /> },
+  { id: 'library', label: 'Custom Music', icon: <MdLibraryMusic size={15} /> },
 ];
 
 interface MainPopupProps {
@@ -283,31 +260,27 @@ export const MainPopupContent: React.FC<MainPopupProps> = ({ onDismiss }) => {
   useEffect(() => subscribeCacheInfo((info: CacheInfo) => { setCacheCount(info.count); setCacheBytes(info.bytes); }), []);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, paddingTop: '8px' }}>
-      <div style={{ display: 'flex', gap: '6px', padding: '0 16px 4px', flexWrap: 'wrap', position: 'relative', zIndex: 10, WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+      <div style={{ display: 'flex', gap: '2px', padding: '8px 12px 0', flexShrink: 0, WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
         {TABS.map((tab) => (
-          <DialogButton
-            key={tab.id}
-            style={{ ...TAB_BTN, fontWeight: activeTab === tab.id ? 700 : 400, opacity: activeTab === tab.id ? 1 : 0.6 }}
-            onClick={() => setActiveTab(tab.id)}
-          >
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '7px' }}>
-              {tab.icon}
-              {tab.label}
-              {tab.id === 'library' && customCount != null && customCount > 0 && (
-                <span style={{ fontSize: '10px', opacity: 0.6 }}>{customCount}</span>
-              )}
-              {tab.id === 'cache' && cacheCount != null && cacheCount > 0 && (
-                <span style={{ fontSize: '10px', opacity: 0.6 }}>{cacheCount}</span>
-              )}
-            </span>
-          </DialogButton>
+          <button key={tab.id} type="button" style={tabBtnStyle(activeTab === tab.id)} onClick={() => setActiveTab(tab.id)}>
+            {tab.icon}
+            {tab.label}
+            {tab.id === 'library' && customCount != null && customCount > 0 && (
+              <span style={{ fontSize: '10px', opacity: 0.6, marginLeft: '2px' }}>{customCount}</span>
+            )}
+            {tab.id === 'cache' && cacheCount != null && cacheCount > 0 && (
+              <span style={{ fontSize: '10px', opacity: 0.6, marginLeft: '2px' }}>{cacheCount}</span>
+            )}
+          </button>
         ))}
       </div>
-      {activeTab === 'nowplaying' && <NowPlayingTab />}
-      {activeTab === 'settings' && <SettingsTab />}
-      {activeTab === 'library' && <LibraryModalContent onChanged={(map) => setGlobalCustomCount(Object.keys(map).length)} />}
-      {activeTab === 'cache' && <CacheModalContent />}
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+        {activeTab === 'nowplaying' && <NowPlayingTab />}
+        {activeTab === 'settings' && <SettingsTab />}
+        {activeTab === 'cache' && <CacheModalContent />}
+        {activeTab === 'library' && <LibraryModalContent onChanged={(map) => setGlobalCustomCount(Object.keys(map).length)} />}
+      </div>
     </div>
   );
 };

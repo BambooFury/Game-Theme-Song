@@ -7,7 +7,7 @@ import { getCurrentAppId, getPendingConfirmAppId, resetPlayback, setGlobalCacheI
 import type { CacheItem } from '../core/types';
 import { getLibraryApps } from './library';
 
-const LIST_SCROLL: React.CSSProperties = { maxHeight: 'calc(100vh - 260px)', overflowY: 'auto' };
+const LIST_SCROLL: React.CSSProperties = { flex: 1, minHeight: 0, overflowY: 'auto' };
 const bytesToMegabytes = (bytes: number) => `${(bytes / 1048576).toFixed(1)} MB`;
 
 const CacheRow: React.FC<{ item: CacheItem; busy: boolean; onDelete: (item: CacheItem) => void }> = ({ item, busy, onDelete }) => (
@@ -109,7 +109,7 @@ export const CacheModalContent: React.FC = () => {
 
   const totalBytes = (items ?? []).reduce((total, item) => total + item.bytes, 0);
   return (
-    <>
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, padding: '16px' }}>
       <DialogHeader>Downloaded music</DialogHeader>
       <DialogBody>
         <DialogBodyText>{items?.length ? `${items.length} track${items.length === 1 ? '' : 's'} · ${bytesToMegabytes(totalBytes)} on disk` : 'Nothing downloaded yet.'}</DialogBodyText>
@@ -123,6 +123,6 @@ export const CacheModalContent: React.FC = () => {
         </div>
         {(items?.length ?? 0) > 0 && <DialogButton disabled={clearingAll} onClick={() => void onClearAll()}>{clearingAll ? 'Clearing…' : 'Clear all downloaded music'}</DialogButton>}
       </DialogBody>
-    </>
+    </div>
   );
 };

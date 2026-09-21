@@ -7,11 +7,10 @@ import { reapplyForApp, setAppIgnored } from '../core/engine';
 import type { CustomMap, LibApp } from '../core/types';
 import { ACCEPT_EXTS, MAX_CARDS, MAX_UPLOAD_BYTES, decodeCustomItems, getLibraryApps, uploadCustomMusic } from './library';
 
-const LIST_SCROLL: React.CSSProperties = { maxHeight: 'calc(100vh - 320px)', overflowY: 'auto' };
+const LIST_SCROLL: React.CSSProperties = { flex: 1, minHeight: 0, overflowY: 'auto' };
 
 const ICON_STYLE: React.CSSProperties = { width: 32, height: 32, objectFit: 'cover', borderRadius: 2 };
 
-/** Resolves the best available icon image for an app and hides it if it fails to load. */
 const AppIcon: React.FC<{ app: LibApp }> = ({ app }) => {
   const src = app.icon ?? app.cover ?? `https://cdn.cloudflare.steamstatic.com/steam/apps/${app.appid}/capsule_236x69.jpg`;
   return <img src={src} alt="" style={ICON_STYLE} loading="lazy" onError={(e) => { (e.currentTarget.style.display = 'none'); }} />;
@@ -35,15 +34,17 @@ const GameRow: React.FC<GameRowProps> = ({ app, customTitle, busy, ignored, onSe
     childrenLayout="below"
     childrenContainerWidth="max"
   >
-    <DialogButtonSecondary style={{ padding: '4px 12px' }} disabled={busy} onClick={() => onSet(app)}>
-      {busy ? 'Saving…' : customTitle ? 'Replace music' : 'Set music'}
-    </DialogButtonSecondary>
-    {customTitle && (
-      <DialogButtonSecondary style={{ padding: '4px 12px' }} disabled={busy} onClick={() => onClear(app)}>
-        Remove custom music
+    <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+      <DialogButtonSecondary style={{ padding: '4px 12px' }} disabled={busy} onClick={() => onSet(app)}>
+        {busy ? 'Saving…' : customTitle ? 'Replace' : 'Set music'}
       </DialogButtonSecondary>
-    )}
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingTop: 16, pointerEvents: 'none' }}>
+      {customTitle && (
+        <DialogButtonSecondary style={{ padding: '4px 12px' }} disabled={busy} onClick={() => onClear(app)}>
+          Remove
+        </DialogButtonSecondary>
+      )}
+    </div>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, pointerEvents: 'none' }}>
       <div style={{ pointerEvents: 'auto' }}>
         <DialogCheckbox
           bottomSeparator="none"
@@ -169,7 +170,7 @@ export const LibraryModalContent: React.FC<LibraryModalProps> = ({ onChanged }) 
 
   const shown = visible.slice(0, MAX_CARDS);
   return (
-    <>
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, padding: '16px' }}>
       <DialogHeader>Custom game music</DialogHeader>
       <DialogBody>
         <DialogBodyText>Choose a personal track for a game. It plays before automatic theme search.</DialogBodyText>
@@ -195,6 +196,6 @@ export const LibraryModalContent: React.FC<LibraryModalProps> = ({ onChanged }) 
         </div>
         <input ref={fileRef} type="file" accept={ACCEPT_EXTS} hidden onChange={onFilePicked} />
       </DialogBody>
-    </>
+    </div>
   );
 };

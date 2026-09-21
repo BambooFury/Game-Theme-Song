@@ -13,10 +13,10 @@ export const ManagerWindows: React.FC = () => {
         <SteamDialog
           strTitle="Game Theme Song"
           onDismiss={() => closeManagerPopup('main')}
-          popupWidth={580}
+          popupWidth={620}
           popupHeight={Math.round(window.innerHeight * 0.75)}
-          minWidth={460}
-          minHeight={420}
+          minWidth={520}
+          minHeight={480}
           resizable
           saveDimensionsKey="gtsMainPopup"
         >
