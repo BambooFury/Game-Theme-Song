@@ -17,7 +17,7 @@ local function resolve_plugin_dir()
     if source:sub(1, 1) == "@" then source = source:sub(2) end
     local dir = source:match("^(.+)[/\\]backend[/\\][^/\\]+$")
     if dir then return dir end
-    return millennium.steam_path() .. "/millennium/plugins/Game Theme Song"
+    return millennium.steam_path() .. "/millennium/plugins/Game Theme Song on Game Page"
 end
 
 local SEP = package.config:sub(1, 1)
@@ -37,12 +37,49 @@ local function join(...)
 end
 
 local PLUGIN_DIR = norm_path(resolve_plugin_dir())
-local CACHE_FILE = join(PLUGIN_DIR, "cache.json")
-local CONFIG_FILE = join(PLUGIN_DIR, "settings.json")
-local CUSTOM_FILE = join(PLUGIN_DIR, "custom.json")
-local IGNORE_FILE = join(PLUGIN_DIR, "ignored.json")
-local RESOLVE_MARKER = join(PLUGIN_DIR, "resolve.lock")
-local BOOT_MARKER = join(PLUGIN_DIR, "boot.lock")
+
+local function resolve_data_dir()
+    local install = millennium.get_install_path() or ""
+    install = install:gsub("/", SEP):gsub(SEP .. "+$", "")
+    return install .. SEP .. "plugins" .. SEP .. "game-theme-song-data"
+end
+
+local DATA_DIR = norm_path(resolve_data_dir())
+
+local function ensure_data_dir()
+    if not fs then return end
+    if fs.exists(DATA_DIR) then return end
+    pcall(fs.create_directories, DATA_DIR)
+end
+
+local function migrate_data_file(name)
+    local src = join(PLUGIN_DIR, name)
+    local dst = join(DATA_DIR, name)
+    if fs and fs.exists(dst) then return end
+    local f = io.open(src, "rb")
+    if not f then return end
+    local content = f:read("*a")
+    f:close()
+    if content and content ~= "" then
+        local out = io.open(dst, "wb")
+        if out then out:write(content); out:close() end
+    end
+end
+
+local function migrate_all_data()
+    ensure_data_dir()
+    migrate_data_file("settings.json")
+    migrate_data_file("cache.json")
+    migrate_data_file("custom.json")
+    migrate_data_file("ignored.json")
+end
+
+local CACHE_FILE = join(DATA_DIR, "cache.json")
+local CONFIG_FILE = join(DATA_DIR, "settings.json")
+local CUSTOM_FILE = join(DATA_DIR, "custom.json")
+local IGNORE_FILE = join(DATA_DIR, "ignored.json")
+local RESOLVE_MARKER = join(DATA_DIR, "resolve.lock")
+local BOOT_MARKER = join(DATA_DIR, "boot.lock")
 local AUDIO_DIR = join(norm_path(millennium.steam_path()), "steamui", "game_theme_song")
 local LOOPBACK_BASE = "https://steamloopback.host/game_theme_song/"
 local CONFIG_VERSION = 14
@@ -1413,6 +1450,7 @@ end
 end
 
 local function on_load()
+    pcall(migrate_all_data)
     local prev_boot = tonumber(read_file(BOOT_MARKER) or "") or 0
     if prev_boot >= 1 then
         pcall(os.remove, CACHE_FILE)
