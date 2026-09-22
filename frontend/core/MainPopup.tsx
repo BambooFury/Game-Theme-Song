@@ -257,18 +257,13 @@ const TABS: { id: TabId; label: string; icon: React.ReactNode }[] = [
   { id: 'library', label: 'Custom Music', icon: <MdLibraryMusic size={15} /> },
 ];
 
-interface MainPopupProps {
-  onDismiss: () => void;
-}
-
-export const MainPopupContent: React.FC<MainPopupProps> = ({ onDismiss }) => {
+export const MainPopupContent: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabId>('nowplaying');
   const [customCount, setCustomCount] = useState<number | null>(getCustomCount());
   const [cacheCount, setCacheCount] = useState<number | null>(null);
-  const [cacheBytes, setCacheBytes] = useState(0);
 
   useEffect(() => subscribeCustomCount(setCustomCount), []);
-  useEffect(() => subscribeCacheInfo((info: CacheInfo) => { setCacheCount(info.count); setCacheBytes(info.bytes); }), []);
+  useEffect(() => subscribeCacheInfo((info: CacheInfo) => setCacheCount(info.count)), []);
 
   useEffect(() => {
     void (async () => {

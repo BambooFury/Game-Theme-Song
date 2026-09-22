@@ -20,7 +20,7 @@ export const ManagerWindows: React.FC = () => {
           resizable
           saveDimensionsKey="gtsMainPopup"
         >
-          <MainPopupContent onDismiss={() => closeManagerPopup('main')} />
+          <MainPopupContent />
         </SteamDialog>
       )}
     </>

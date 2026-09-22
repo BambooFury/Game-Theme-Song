@@ -42,7 +42,7 @@ body, html {
 export const SteamDialog: React.FC<GenericDialogProps & { children?: React.ReactNode }> = ({ children, ...props }) => {
   useEffect(() => {
     const id = 'gts-dark-theme';
-    if (document.getElementById(id)) return;
+    if (document.getElementById(id)) return () => {};
     const style = document.createElement('style');
     style.id = id;
     style.textContent = DARK_THEME_CSS;
