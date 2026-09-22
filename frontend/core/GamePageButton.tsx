@@ -24,15 +24,6 @@ function resolveClasses() {
   }
 }
 
-async function waitForElement(doc: Document, selector: string): Promise<Element | null> {
-  try {
-    const els = await Millennium.findElement(doc, selector, 10000);
-    return els[0] ?? null;
-  } catch {
-    return null;
-  }
-}
-
 async function injectButton(doc: Document): Promise<void> {
   resolveClasses();
   if (!inPageClass || !btnContClass || !menuBtnClass) return;
@@ -40,8 +31,17 @@ async function injectButton(doc: Document): Promise<void> {
   if (doc.querySelector(`.${MUSIC_BTN_CLASS}`)) return;
 
   const selector = `div.${inPageClass} div.${btnContClass} > div.${menuBtnClass}:not([role="button"])`;
-  const target = await waitForElement(doc, selector);
-  if (!target || !target.parentNode) return;
+  let els: NodeListOf<Element>;
+  try {
+    els = await Millennium.findElement(doc, selector, 10000);
+  } catch {
+    return;
+  }
+  const target = els.length > 0 ? els[els.length - 1] : null;
+  if (!target) return;
+
+  const parent = target.parentElement;
+  if (!parent) return;
 
   const btn = target.cloneNode(true) as Element;
   btn.classList.add(MUSIC_BTN_CLASS);
@@ -49,7 +49,7 @@ async function injectButton(doc: Document): Promise<void> {
   if (firstChild) {
     (firstChild as HTMLElement).innerHTML = ICON_SVG;
   }
-  target.parentNode.insertBefore(btn, target.nextSibling);
+  parent.insertBefore(btn, target.nextSibling);
   btn.addEventListener('click', () => {
     openManagerPopup('main');
   });
@@ -114,8 +114,10 @@ function setupFinishedRequestListener(doc: Document): void {
         try {
           const capsule = doc.querySelector(`div.${topCapsuleClass}`);
           if (capsule && !(capsule as any).dataset?.gtsObserved) {
+            const parent = capsule.parentElement;
+            if (!parent) return;
             (capsule as any).dataset.gtsObserved = '1';
-            new MutationObserver(() => void renderApp(doc)).observe(capsule.parentNode, {
+            new MutationObserver(() => void renderApp(doc)).observe(parent, {
               subtree: true,
               childList: true,
             });
