@@ -1,5 +1,5 @@
 import type { Settings, CacheInfo, ContextState, PlaybackMode } from './types';
-import { getThemeAudio, rerollTheme, invalidateAudio, getBackendSettings, getIgnoredList, setIgnoredBackend } from './api';
+import { getThemeAudio, rerollTheme, invalidateAudio, getBackendSettings, getCacheInfo, getIgnoredList, setIgnoredBackend } from './api';
 import { warn } from './log';
 
 const DEFAULTS: Settings = {
@@ -314,13 +314,14 @@ async function runReroll(): Promise<void> {
   const mySeq = activeSeq;
   const getSeq = () => activeSeq;
   try {
-    const { ok, title, url } = await resolveAndPlay(appId, name, mySeq, getSeq, rerollExclude);
+    const { ok, title, url, cached } = await resolveAndPlay(appId, name, mySeq, getSeq, rerollExclude);
     if (mySeq !== activeSeq) return;
         if (ok) {
       currentTitle = title;
       currentUrl = url;
       pendingConfirmAppId = confirmModeOn() ? appId : null;
       setPlaybackMode('ready');
+      if (!cached) void refreshCacheInfo();
     } else {
       if (currentUrl) await playUrl(currentUrl, mySeq, getSeq);
       if (mySeq === activeSeq) setPlaybackMode('ready');
@@ -344,7 +345,7 @@ function discardPending(keepAppId: number | null = null) {
   const id = pendingConfirmAppId;
   if (id == null || id === keepAppId) return;
   pendingConfirmAppId = null;
-  void invalidateAudio(id).catch((e) => warn('failed to discard pending song', e));
+  void invalidateAudio(id).then(() => { void refreshCacheInfo(); }).catch((e) => warn('failed to discard pending song', e));
 }
 
 export function acceptCurrent(): void {
@@ -430,6 +431,16 @@ export function subscribeCacheInfo(fn: (info: CacheInfo) => void): () => void {
   return () => { gCacheInfoListeners = gCacheInfoListeners.filter((x) => x !== fn); };
 }
 
+export async function refreshCacheInfo() {
+  try {
+    const raw = await getCacheInfo();
+    const info = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    if (info?.ok) setGlobalCacheInfo({ count: info.count, bytes: info.bytes });
+  } catch (e) {
+    warn('refreshCacheInfo failed', e);
+  }
+}
+
 const ignoredSet = new Set<number>();
 
 export async function loadIgnoredOnce() {
@@ -498,7 +509,7 @@ async function playForApp(appId: number) {
   if (mySeq === activeSeq) setPlaybackMode('searching');
 }, 350);
 
-        const { ok, title, url, cached } = await resolveAndPlay(appId, name, mySeq, getSeq, [], (isCached) => {
+        const { ok, title, url, cached, custom } = await resolveAndPlay(appId, name, mySeq, getSeq, [], (isCached) => {
       if (isCached) {
         clearTimeout(searchingTimer);
         if (mySeq === activeSeq) setPlaybackMode('off');
@@ -514,6 +525,7 @@ async function playForApp(appId: number) {
       if (!state.settings.manual_search) setPlaybackMode('off');
       else if (cached) setPlaybackMode('off');
       else setPlaybackMode('ready');
+      if (!cached && !custom) void refreshCacheInfo();
     } else {
       setPlaybackMode('off');
     }

@@ -2,9 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { DialogBody, DialogBodyText, DialogButton, DialogButtonSecondary, DialogHeader, SliderField, ToggleField } from 'millennium';
 import { MdMusicNote, MdSkipNext, MdStop, MdCheckCircle, MdSettings, MdLibraryMusic, MdDownload, MdSearch, MdSportsEsports } from 'react-icons/md';
 import { warn } from './log';
-import { getBackendSettings, setBackendSetting } from './api';
+import { getBackendSettings, setBackendSetting, getCacheInfo, getCustomList } from './api';
 import {
-  state, getAudioEl, setGlobalCustomCount, getCustomCount, subscribeCustomCount,
+  state, getAudioEl, setGlobalCustomCount, setGlobalCacheInfo, getCustomCount, subscribeCustomCount,
   subscribeCacheInfo, subscribeContext, getContext, subscribePlayback, isPlaying,
   rerollCurrent, acceptCurrent, stopAudio, getPendingConfirmAppId,
 } from './engine';
@@ -269,6 +269,21 @@ export const MainPopupContent: React.FC<MainPopupProps> = ({ onDismiss }) => {
 
   useEffect(() => subscribeCustomCount(setCustomCount), []);
   useEffect(() => subscribeCacheInfo((info: CacheInfo) => { setCacheCount(info.count); setCacheBytes(info.bytes); }), []);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const raw = await getCacheInfo();
+        const info = typeof raw === 'string' ? JSON.parse(raw) : raw;
+        if (info?.ok) setGlobalCacheInfo({ count: info.count, bytes: info.bytes });
+      } catch (e) { warn('getCacheInfo failed', e); }
+      try {
+        const raw = await getCustomList();
+        const info = typeof raw === 'string' ? JSON.parse(raw) : raw;
+        if (info?.ok && info.items) setGlobalCustomCount(Object.keys(info.items).length);
+      } catch (e) { warn('getCustomList failed', e); }
+    })();
+  }, []);
 
   useEffect(() => {
     const id = 'gts-popup-styles';
