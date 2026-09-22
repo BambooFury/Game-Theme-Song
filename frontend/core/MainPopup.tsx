@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { DialogBody, DialogBodyText, DialogButton, DialogButtonSecondary, DialogHeader, SliderField, ToggleField } from 'millennium';
-import { MdMusicNote, MdSkipNext, MdStop, MdCheckCircle, MdSettings, MdLibraryMusic, MdDownload, MdSearch } from 'react-icons/md';
+import { MdMusicNote, MdSkipNext, MdStop, MdCheckCircle, MdSettings, MdLibraryMusic, MdDownload, MdSearch, MdSportsEsports } from 'react-icons/md';
 import { warn } from './log';
 import { getBackendSettings, setBackendSetting } from './api';
 import {
@@ -85,9 +85,7 @@ function NowPlayingTab(): React.JSX.Element {
       ? `Playing: ${ctx.title ?? 'theme music'}`
       : mode === 'ready'
         ? `Ready: ${ctx.title ?? 'theme music'}`
-        : hasGame
-          ? 'No theme found for this game'
-          : 'No game open';
+        : 'No theme found for this game';
 
   const pct = showProgress && duration > 0 ? Math.min(100, (progress / duration) * 100) : 0;
   const timeLabel = showProgress && duration > 0
@@ -96,13 +94,23 @@ function NowPlayingTab(): React.JSX.Element {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', padding: '16px', minHeight: 0, flex: 1 }}>
-      <DialogHeader>
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
-          <MdMusicNote size={18} />
-          {ctx.gameName ?? 'No game open'}
-        </span>
-      </DialogHeader>
-      {searching ? (
+      {hasGame && (
+        <DialogHeader>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+            <MdMusicNote size={18} />
+            {ctx.gameName}
+          </span>
+        </DialogHeader>
+      )}
+      {!hasGame ? (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '16px', flex: 1, padding: '24px', textAlign: 'center' }}>
+          <div style={{ width: '72px', height: '72px', borderRadius: '50%', background: 'rgba(103,193,245,0.1)', border: '1px solid rgba(103,193,245,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <MdSportsEsports size={36} style={{ color: '#67c1f5', opacity: 0.7 }} />
+          </div>
+          <div style={{ fontSize: '17px', fontWeight: 700, color: 'var(--main-text-color, #ffffff)' }}>No game open</div>
+          <div style={{ fontSize: '13px', lineHeight: 1.6, color: 'var(--secondary-text-color, rgba(255,255,255,0.5))', maxWidth: '320px' }}>Open a game page in your library to hear its theme music here.</div>
+        </div>
+      ) : searching ? (
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '14px', flex: 1, padding: '40px 0' }}>
           <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: 'rgba(103,193,245,0.1)', border: '1px solid rgba(103,193,245,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <MdSearch size={28} style={{ color: '#67c1f5', opacity: 0.7 }} />
@@ -154,9 +162,6 @@ function NowPlayingTab(): React.JSX.Element {
               </span>
             ) : null}
           </div>
-          {!hasGame && (
-            <DialogBodyText>Open a game page in your library to see its theme music here.</DialogBodyText>
-          )}
         </DialogBody>
       )}
     </div>
