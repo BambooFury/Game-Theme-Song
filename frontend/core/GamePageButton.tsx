@@ -89,14 +89,25 @@ async function renderApp(doc: Document): Promise<void> {
 }
 
 function setupForPopup(popup: any): void {
-  const doc = popup?.m_popup?.document as Document | undefined;
-  if (!doc) return;
+  const trySetup = () => {
+    const doc = popup?.m_popup?.document as Document | undefined;
+    if (!doc) {
+      setTimeout(trySetup, 500);
+      return;
+    }
+    setTimeout(() => void renderApp(doc), 300);
+    setupFinishedRequestListener(doc);
+  };
+  trySetup();
+}
 
-  setTimeout(() => void renderApp(doc), 500);
-
-  setTimeout(() => {
+function setupFinishedRequestListener(doc: Document): void {
+  const trySetup = () => {
     const mwbm = (window as any).MainWindowBrowserManager;
-    if (!mwbm?.m_browser?.on) return;
+    if (!mwbm?.m_browser?.on) {
+      setTimeout(trySetup, 500);
+      return;
+    }
     mwbm.m_browser.on('finished-request', async () => {
       if (mwbm.m_lastLocation?.pathname?.startsWith('/library/app/')) {
         await renderApp(doc);
@@ -112,7 +123,8 @@ function setupForPopup(popup: any): void {
         } catch {}
       }
     });
-  }, 10000);
+  };
+  trySetup();
 }
 
 export function setupGamePageButton(): void {
@@ -120,11 +132,11 @@ export function setupGamePageButton(): void {
   hooked = true;
 
   try {
-    Millennium.AddWindowCreateHook?.(async (popup: any) => {
-      await new Promise(r => setTimeout(r, 10000));
-      if (popup?.m_strName === 'SP Desktop_uid0') {
+    Millennium.AddWindowCreateHook?.((popup: any) => {
+      setTimeout(() => {
+        if (popup?.m_strName !== 'SP Desktop_uid0') return;
         setupForPopup(popup);
-      }
+      }, 200);
     });
   } catch {}
 }
