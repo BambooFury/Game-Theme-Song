@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DialogButton, DialogButtonSecondary, DialogCheckbox, Field, TextField } from 'millennium';
-import { MdCloudOff, MdDeleteOutline, MdHourglassEmpty, MdOutlineLibraryMusic, MdSearchOff, MdSportsEsports, MdUploadFile } from 'react-icons/md';
+import { MdCloudOff, MdDeleteOutline, MdHourglassEmpty, MdSearchOff, MdSportsEsports, MdUploadFile } from 'react-icons/md';
 import { warn } from '../core/log';
 import { readFileBase64 } from '../core/base64';
 import { clearCustomMusic, getCustomList, getIgnoredList } from '../core/api';
@@ -205,17 +205,12 @@ export const LibraryModalContent: React.FC<LibraryModalProps> = ({ onChanged }) 
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '16px 16px 12px', flexShrink: 0 }}>
-        <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'rgba(103,193,245,0.12)', border: '1px solid rgba(103,193,245,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-          <MdOutlineLibraryMusic size={20} style={{ color: '#67c1f5' }} />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', padding: '16px 16px 12px', flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{ fontSize: '15px', fontWeight: 700, color: 'var(--main-text-color, #ffffff)' }}>Custom game music</span>
+          {customCount > 0 && <span className="gts-tab-count">{customCount}</span>}
         </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: '15px', fontWeight: 700, color: 'var(--main-text-color, #ffffff)' }}>Custom game music</span>
-            {customCount > 0 && <span className="gts-tab-count">{customCount}</span>}
-          </div>
-          <div style={{ fontSize: '12px', color: 'var(--secondary-text-color, rgba(255,255,255,0.5))', marginTop: '2px' }}>Pick a personal track that plays before automatic search.</div>
-        </div>
+        <div style={{ fontSize: '12px', color: 'var(--secondary-text-color, rgba(255,255,255,0.5))' }}>Pick a personal track that plays before automatic search.</div>
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', padding: '0 16px 8px', gap: '4px', flexShrink: 0 }}>
