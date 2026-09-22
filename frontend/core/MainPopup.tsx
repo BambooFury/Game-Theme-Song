@@ -22,43 +22,6 @@ const formatLimit = (sec: number) => {
 type TabId = 'nowplaying' | 'settings' | 'cache' | 'library';
 
 const TAB_CSS = `
-.gts-tab {
-  display: inline-flex !important;
-  align-items: center;
-  gap: 7px;
-  padding: 9px 18px !important;
-  border: none !important;
-  border-bottom: 2px solid transparent !important;
-  border-radius: 4px 4px 0 0 !important;
-  background: transparent !important;
-  box-shadow: none !important;
-  color: inherit !important;
-  cursor: pointer;
-  font-size: 13px;
-  font-family: inherit;
-  font-weight: 400;
-  opacity: 0.55;
-  transition: background 0.15s ease, opacity 0.15s ease;
-  -webkit-app-region: no-drag;
-}
-.gts-tab:hover, .gts-tab:focus {
-  background: rgba(255,255,255,0.08) !important;
-  opacity: 0.85;
-}
-.gts-tab:active { background: rgba(255,255,255,0.14) !important; }
-.gts-tab-active {
-  opacity: 1 !important;
-  font-weight: 600 !important;
-  border-bottom-color: var(--color-online, #5dc26a) !important;
-}
-.gts-tab-active:hover { background: rgba(255,255,255,0.05) !important; }
-.gts-tab-count {
-  font-size: 10px;
-  opacity: 0.6;
-  background: rgba(255,255,255,0.1);
-  border-radius: 8px;
-  padding: 1px 6px;
-}
 .gts-row-actions {
   margin-left: auto;
   display: flex;
@@ -66,38 +29,28 @@ const TAB_CSS = `
   gap: 8px;
   align-self: stretch;
 }
-.gts-empty-wrap {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 14px;
-  padding: 40px 24px;
-  text-align: center;
-}
-.gts-empty-circle {
-  width: 64px;
-  height: 64px;
-  border-radius: 50%;
-  background: rgba(103,193,245,0.1);
-  border: 1px solid rgba(103,193,245,0.25);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.gts-empty-title {
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--main-text-color, #ffffff);
-}
-.gts-empty-body {
-  font-size: 12.5px;
-  line-height: 1.6;
-  color: var(--secondary-text-color, rgba(255,255,255,0.5));
-  max-width: 340px;
+.gts-tab-count {
+  font-size: 10px;
+  font-weight: 600;
+  opacity: 0.7;
+  background: rgba(255,255,255,0.12);
+  border-radius: 8px;
+  padding: 1px 6px;
 }
 `;
+
+const tabStyle = (active: boolean): React.CSSProperties => ({
+  padding: '9px 16px',
+  fontWeight: active ? 700 : 400,
+  opacity: active ? 1 : 0.62,
+  whiteSpace: 'nowrap',
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: '7px',
+  position: 'relative',
+  zIndex: 2,
+  WebkitAppRegion: 'no-drag',
+} as React.CSSProperties);
 
 function NowPlayingTab(): React.JSX.Element {
   const [ctx, setCtx] = useState<ContextState>(getContext());
@@ -323,11 +276,11 @@ export const MainPopupContent: React.FC<MainPopupProps> = ({ onDismiss }) => {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
-      <div style={{ display: 'flex', gap: '6px', padding: '8px 16px 0', flexShrink: 0, WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+      <div style={{ display: 'flex', gap: '4px', padding: '8px 16px 0', flexShrink: 0, WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
         {TABS.map((tab) => (
           <DialogButton
             key={tab.id}
-            className={`gts-tab${activeTab === tab.id ? ' gts-tab-active' : ''}`}
+            style={tabStyle(activeTab === tab.id)}
             onClick={() => setActiveTab(tab.id)}
           >
             {tab.icon}
