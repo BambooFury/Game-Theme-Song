@@ -1,13 +1,23 @@
-import { findModule, Millennium } from 'millennium';
+import { findModule } from 'millennium';
 import { openManagerPopup } from '../settings/managerPopups';
 
+const MAIN_WINDOW_NAME = 'SP Desktop_uid0';
 const MUSIC_BTN_CLASS = 'gts-music-btn';
+const NOW_PLAYING_CLASS = 'gts-now-playing';
+const POLL_MS = 500;
+const FIND_TIMEOUT_MS = 4000;
+const SETUP_TIMEOUT_MS = 120000;
 const ICON_SVG = '<div style="display:flex;align-items:center;justify-content:center;height:100%;"><svg class="SVGIcon_Settings" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" style="width:1.2em;height:1.2em;"><path d="M18.622 3.217A1 1 0 0 1 19 4v11.667q0 .06-.007.121q.007.105.007.212a3 3 0 1 1-2-2.83V9.26l-8 1.867v6.876a3 3 0 1 1-2-2.832V6.333a1 1 0 0 1 .773-.974l10-2.333a1 1 0 0 1 .842.186z" fill="currentColor"/></svg></div>';
 
 let inPageClass = '';
 let btnContClass = '';
 let menuBtnClass = '';
 let topCapsuleClass = '';
+let active = false;
+let mainDoc: Document | null = null;
+let capsuleObserver: MutationObserver | null = null;
+let bootRunning = false;
+let watchedBrowser: unknown = null;
 
 function resolveClasses() {
   if (!inPageClass) {
@@ -24,21 +34,36 @@ function resolveClasses() {
   }
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function findMusicButton(doc: Document): Element | null {
+  return doc.querySelector(`.${MUSIC_BTN_CLASS}`);
+}
+
+async function waitForSelector(doc: Document, selector: string, timeoutMs: number): Promise<Element | null> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const el = doc.querySelector(selector);
+      if (el) return el;
+    } catch {}
+    if (!active) return null;
+    await sleep(POLL_MS);
+  }
+  return null;
+}
+
 async function injectButton(doc: Document): Promise<void> {
   resolveClasses();
   if (!inPageClass || !btnContClass || !menuBtnClass) return;
-
-  if (doc.querySelector(`.${MUSIC_BTN_CLASS}`)) return;
+  if (findMusicButton(doc)) return;
 
   const selector = `div.${inPageClass} div.${btnContClass} > div.${menuBtnClass}:not([role="button"])`;
-  let els: NodeListOf<Element>;
-  try {
-    els = await Millennium.findElement(doc, selector, 10000);
-  } catch {
-    return;
-  }
-  const target = els.length > 0 ? els[els.length - 1] : null;
+  const target = await waitForSelector(doc, selector, FIND_TIMEOUT_MS);
   if (!target) return;
+  if (findMusicButton(doc)) return;
 
   const parent = target.parentElement;
   if (!parent) return;
@@ -56,13 +81,12 @@ async function injectButton(doc: Document): Promise<void> {
 }
 
 function injectNowPlaying(doc: Document): void {
-  resolveClasses();
   if (!topCapsuleClass) return;
 
   const capsule = doc.querySelector(`div.${topCapsuleClass}`);
-  if (capsule && !capsule.querySelector('.gts-now-playing')) {
+  if (capsule && !capsule.querySelector(`.${NOW_PLAYING_CLASS}`)) {
     const npDiv = doc.createElement('div');
-    npDiv.className = 'gts-now-playing';
+    npDiv.className = NOW_PLAYING_CLASS;
     npDiv.style.cssText = 'position:absolute;bottom:5px;right:20px;color:white;text-shadow:0px 2px 4px rgba(0,0,0,0.8);font-weight:bold;font-size:14px;z-index:999;cursor:pointer;transition:opacity 0.3s ease,color 0.2s ease;opacity:0;pointer-events:none;';
     npDiv.onmouseover = () => { npDiv.style.color = '#67c1f5'; };
     npDiv.onmouseout = () => { npDiv.style.color = 'white'; };
@@ -79,70 +103,98 @@ function injectNowPlaying(doc: Document): void {
   }
 }
 
-let hooked = false;
+function observeCapsule(): void {
+  if (!mainDoc || !topCapsuleClass) return;
+  const capsule = mainDoc.querySelector(`div.${topCapsuleClass}`);
+  if (!capsule || (capsule as HTMLElement).dataset.gtsObserved) return;
+  const parent = capsule.parentElement;
+  if (!parent) return;
+  (capsule as HTMLElement).dataset.gtsObserved = '1';
+  capsuleObserver?.disconnect();
+  capsuleObserver = new MutationObserver(() => void renderApp());
+  capsuleObserver.observe(parent, { subtree: true, childList: true });
+}
 
-async function renderApp(doc: Document): Promise<void> {
+async function renderApp(): Promise<void> {
+  if (!mainDoc) return;
   try {
-    await injectButton(doc);
-    injectNowPlaying(doc);
+    await injectButton(mainDoc);
+    injectNowPlaying(mainDoc);
+    observeCapsule();
   } catch {}
 }
 
-function setupForPopup(popup: any): void {
+async function boot(): Promise<void> {
+  if (bootRunning) return;
+  bootRunning = true;
+  try {
+    for (;;) {
+      if (!active || !mainDoc) return;
+      await renderApp();
+      if (mainDoc && findMusicButton(mainDoc)) return;
+      await sleep(POLL_MS);
+    }
+  } finally {
+    bootRunning = false;
+  }
+}
+
+function watchRequests(): void {
   const trySetup = () => {
-    const doc = popup?.m_popup?.document as Document | undefined;
-    if (!doc) {
-      setTimeout(trySetup, 500);
+    if (!active) return;
+    const mwbm = (window as any).MainWindowBrowserManager;
+    const browser = mwbm?.m_browser;
+    if (!browser?.on) {
+      setTimeout(trySetup, POLL_MS);
       return;
     }
-    setTimeout(() => void renderApp(doc), 300);
-    setupFinishedRequestListener(doc);
+    if (watchedBrowser === browser) return;
+    watchedBrowser = browser;
+    browser.on('finished-request', () => {
+      if (mwbm.m_lastLocation?.pathname?.startsWith('/library/app/')) void renderApp();
+    });
   };
   trySetup();
 }
 
-function setupFinishedRequestListener(doc: Document): void {
-  const trySetup = () => {
-    const mwbm = (window as any).MainWindowBrowserManager;
-    if (!mwbm?.m_browser?.on) {
-      setTimeout(trySetup, 500);
-      return;
-    }
-    mwbm.m_browser.on('finished-request', async () => {
-      if (mwbm.m_lastLocation?.pathname?.startsWith('/library/app/')) {
-        await renderApp(doc);
-        try {
-          const capsule = doc.querySelector(`div.${topCapsuleClass}`);
-          if (capsule && !(capsule as any).dataset?.gtsObserved) {
-            const parent = capsule.parentElement;
-            if (!parent) return;
-            (capsule as any).dataset.gtsObserved = '1';
-            new MutationObserver(() => void renderApp(doc)).observe(parent, {
-              subtree: true,
-              childList: true,
-            });
-          }
-        } catch {}
-      }
-    });
-  };
-  trySetup();
+function setupMainWindow(popup: any): void {
+  const doc = popup?.m_popup?.document as Document | undefined;
+  if (!doc?.body) return;
+  mainDoc = doc;
+  void boot();
+  watchRequests();
 }
 
 export function setupGamePageButton(): void {
-  if (hooked) return;
-  hooked = true;
+  if (active) return;
+  active = true;
 
-  try {
-    Millennium.AddWindowCreateHook?.((popup: any) => {
-      setTimeout(() => {
-        if (popup?.m_strName !== 'SP Desktop_uid0') return;
-        setupForPopup(popup);
-      }, 200);
+  const trySetup = (attempt: number): void => {
+    if (!active) return;
+    const popupManager = (window as any).g_PopupManager;
+    if (!popupManager) {
+      if (attempt * POLL_MS < SETUP_TIMEOUT_MS) setTimeout(() => trySetup(attempt + 1), POLL_MS);
+      return;
+    }
+    popupManager.AddPopupCreatedCallback?.((popup: any) => {
+      if (popup?.m_strName === MAIN_WINDOW_NAME) setupMainWindow(popup);
     });
-  } catch {}
+    const main = popupManager.GetExistingPopup?.(MAIN_WINDOW_NAME);
+    if (main?.m_popup?.document) {
+      setupMainWindow(main);
+    } else if (attempt * POLL_MS < SETUP_TIMEOUT_MS) {
+      setTimeout(() => trySetup(attempt + 1), POLL_MS);
+    }
+  };
+  trySetup(0);
 }
 
 export function removeGamePageButton(): void {
-  hooked = false;
+  active = false;
+  capsuleObserver?.disconnect();
+  capsuleObserver = null;
+  watchedBrowser = null;
+  mainDoc?.querySelector(`.${MUSIC_BTN_CLASS}`)?.remove();
+  mainDoc?.querySelector(`.${NOW_PLAYING_CLASS}`)?.remove();
+  mainDoc = null;
 }
