@@ -1,19 +1,22 @@
-import { callable } from '@steambrew/client';
-import type { Primitive, NoArgs } from './types';
+import { ffi } from 'millennium';
 
-export const getThemeAudio = callable<[{ app_id: number | string; game_name: string; force_refresh: boolean }], string>('get_theme_audio');
-export const rerollTheme = callable<[{ app_id: number | string; game_name: string; force_refresh: boolean; exclude: string }], string>('reroll_theme');
-export const invalidateAudio = callable<[{ app_id: number | string }], string>('invalidate_audio');
-export const getBackendSettings = callable<NoArgs, string>('get_settings');
-export const setBackendSetting = callable<[{ key: string; value: Primitive }], string>('set_setting');
-export const getCacheInfo = callable<NoArgs, string>('get_cache_info');
-export const clearAudioCache = callable<NoArgs, string>('clear_audio_cache');
-export const getCacheList = callable<NoArgs, string>('get_cache_list');
-export const clearCacheFor = callable<[{ app_id: number | string }], string>('clear_cache_for');
-export const getCustomList = callable<NoArgs, string>('get_custom_list');
-export const setCustomMusicBegin = callable<[{ app_id: number | string }], string>('set_custom_music_begin');
-export const setCustomMusicChunk = callable<[{ app_id: number | string; chunk: string }], string>('set_custom_music_chunk');
-export const setCustomMusicFinish = callable<[{ app_id: number | string; ext: string; title_b64: string; name_b64: string }], string>('set_custom_music_finish');
-export const clearCustomMusic = callable<[{ app_id: number | string }], string>('clear_custom_music');
-export const getIgnoredList = callable<NoArgs, string>('get_ignored_list');
-export const setIgnoredBackend = callable<[{ app_id: number | string; value: boolean }], string>('set_ignored');
+// Bridge to the Lua backend. Each backend function is annotated with ---@ffi
+// in backend/main.lua and is called with positional arguments. Every function
+// returns the backend's JSON payload as a string; callers parse it.
+
+export const getThemeAudio = ffi<[number | string, string, boolean], string>('get_theme_audio');
+export const rerollTheme = ffi<[number | string, string, boolean, string], string>('reroll_theme');
+export const invalidateAudio = ffi<[number | string], string>('invalidate_audio');
+export const getBackendSettings = ffi<[], string>('get_settings');
+export const setBackendSetting = ffi<[string, string | number | boolean], string>('set_setting');
+export const getCacheInfo = ffi<[], string>('get_cache_info');
+export const clearAudioCache = ffi<[], string>('clear_audio_cache');
+export const getCacheList = ffi<[], string>('get_cache_list');
+export const clearCacheFor = ffi<[number | string], string>('clear_cache_for');
+export const getCustomList = ffi<[], string>('get_custom_list');
+export const setCustomMusicBegin = ffi<[number | string], string>('set_custom_music_begin');
+export const setCustomMusicChunk = ffi<[number | string, string], string>('set_custom_music_chunk');
+export const setCustomMusicFinish = ffi<[number | string, string, string, string], string>('set_custom_music_finish');
+export const clearCustomMusic = ffi<[number | string], string>('clear_custom_music');
+export const getIgnoredList = ffi<[], string>('get_ignored_list');
+export const setIgnoredBackend = ffi<[number | string, boolean], string>('set_ignored');

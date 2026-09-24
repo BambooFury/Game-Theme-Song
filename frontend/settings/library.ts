@@ -72,11 +72,11 @@ try {
 
 export async function uploadCustomMusic(appid: number | string, gameName: string, fileName: string, data: string): Promise<{ ok: boolean; error?: string }> {
   const ext = (fileName.split('.').pop() ?? '').toLowerCase();
-  const begin = JSON.parse(await setCustomMusicBegin({ app_id: appid }));
+  const begin = JSON.parse(await setCustomMusicBegin(appid));
   if (!begin?.ok) return begin;
   for (let i = 0; i < data.length; i += UPLOAD_CHUNK) {
-    const r = JSON.parse(await setCustomMusicChunk({ app_id: appid, chunk: data.slice(i, i + UPLOAD_CHUNK) }));
+    const r = JSON.parse(await setCustomMusicChunk(appid, data.slice(i, i + UPLOAD_CHUNK)));
     if (!r?.ok) return r;
   }
-  return JSON.parse(await setCustomMusicFinish({ app_id: appid, ext, title_b64: utf8ToBase64(fileName), name_b64: utf8ToBase64(gameName) }));
+  return JSON.parse(await setCustomMusicFinish(appid, ext, utf8ToBase64(fileName), utf8ToBase64(gameName)));
 }

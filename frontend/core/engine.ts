@@ -1,5 +1,5 @@
-import type { Settings, CacheInfo } from './types';
-import { getThemeAudio, rerollTheme, invalidateAudio, getBackendSettings, getIgnoredList, setIgnoredBackend } from './api';
+import type { Settings, CacheInfo, ContextState, PlaybackMode } from './types';
+import { getThemeAudio, rerollTheme, invalidateAudio, getBackendSettings, getCacheInfo, getIgnoredList, setIgnoredBackend } from './api';
 import { warn } from './log';
 
 const DEFAULTS: Settings = {
@@ -64,6 +64,8 @@ function ensureAudio(): HTMLAudioElement {
   a.loop = state.settings.loop;
   a.style.display = 'none';
   a.ontimeupdate = () => applyLimit(a);
+  a.onplay = () => notifyPlayback();
+  a.onpause = () => notifyPlayback();
   document.body.appendChild(a);
   audioEl = a;
   return a;
@@ -167,31 +169,63 @@ async function resolveGameName(appId: number): Promise<string | null> {
   return name;
 }
 
-export type ToastMode = 'off' | 'searching' | 'ready';
-export interface ToastState { mode: ToastMode; title: string | null }
+let playbackMode: PlaybackMode = 'off';
+let contextListeners: ((s: ContextState) => void)[] = [];
 
-let toastMode: ToastMode = 'off';
-let toastTitle: string | null = null;
-let toastListeners: ((s: ToastState) => void)[] = [];
-
-function setToast(mode: ToastMode, title: string | null = toastTitle) {
-  toastMode = mode;
-  toastTitle = title;
-  const snapshot: ToastState = { mode, title };
-  for (const fn of toastListeners) fn(snapshot);
+function notifyContext() {
+  const snapshot: ContextState = {
+    mode: playbackMode,
+    title: currentTitle,
+    gameName: currentGameName,
+    appId: currentAppId,
+  };
+  for (const fn of contextListeners) fn(snapshot);
 }
 
-export function getToast(): ToastState {
-  return { mode: toastMode, title: toastTitle };
+export function getContext(): ContextState {
+  return {
+    mode: playbackMode,
+    title: currentTitle,
+    gameName: currentGameName,
+    appId: currentAppId,
+  };
 }
 
-export function getToastMode(): ToastMode {
-  return toastMode;
+export function getPlaybackMode(): PlaybackMode {
+  return playbackMode;
 }
 
-export function subscribeToast(fn: (s: ToastState) => void): () => void {
-  toastListeners.push(fn);
-  return () => { toastListeners = toastListeners.filter((x) => x !== fn); };
+export function subscribeContext(fn: (s: ContextState) => void): () => void {
+  contextListeners.push(fn);
+  return () => { contextListeners = contextListeners.filter((x) => x !== fn); };
+}
+
+export function getCurrentGameName(): string | null {
+  return currentGameName;
+}
+
+export function getCurrentTitle(): string | null {
+  return currentTitle;
+}
+
+export function isPlaying(): boolean {
+  return audioEl != null && !audioEl.paused;
+}
+
+let playbackListeners: (() => void)[] = [];
+
+export function subscribePlayback(fn: () => void): () => void {
+  playbackListeners.push(fn);
+  return () => { playbackListeners = playbackListeners.filter((x) => x !== fn); };
+}
+
+function notifyPlayback() {
+  for (const fn of playbackListeners) fn();
+}
+
+function setPlaybackMode(mode: PlaybackMode) {
+  playbackMode = mode;
+  notifyContext();
 }
 
 let currentGameName: string | null = null;
@@ -213,8 +247,8 @@ async function resolveAndPlay(
   let resp: any;
   try {
     const raw = rerolling
-      ? await rerollTheme({ app_id: appId, game_name: name, force_refresh: true, exclude: excludeArg })
-      : await getThemeAudio({ app_id: appId, game_name: name, force_refresh: false });
+      ? await rerollTheme(appId, name, true, excludeArg)
+      : await getThemeAudio(appId, name, false);
     resp = typeof raw === 'string' ? JSON.parse(raw) : raw;
   } catch (e) {
     warn('backend error', e);
@@ -225,8 +259,8 @@ async function resolveAndPlay(
   if (mySeq !== getSeq()) return { ok: false, title: null, url: null, cached: false, custom: false };
   try {
     const raw = rerolling
-      ? await rerollTheme({ app_id: appId, game_name: name, force_refresh: true, exclude: excludeArg })
-      : await getThemeAudio({ app_id: appId, game_name: name, force_refresh: false });
+      ? await rerollTheme(appId, name, true, excludeArg)
+      : await getThemeAudio(appId, name, false);
     resp = typeof raw === 'string' ? JSON.parse(raw) : raw;
   } catch (e) {
     warn('backend retry error', e);
@@ -243,10 +277,10 @@ async function resolveAndPlay(
   const ok = await playUrl(resp.url, mySeq, getSeq);
   if (ok || mySeq !== getSeq()) return { ok, title: resp.title ?? null, url: ok ? resp.url : null, cached: !!resp.cached, custom: !!resp.custom };
 
-  await invalidateAudio({ app_id: appId });
+  await invalidateAudio(appId);
   const raw2 = rerolling
-    ? await rerollTheme({ app_id: appId, game_name: name, force_refresh: true, exclude: excludeArg })
-    : await getThemeAudio({ app_id: appId, game_name: name, force_refresh: true });
+    ? await rerollTheme(appId, name, true, excludeArg)
+    : await getThemeAudio(appId, name, true);
   const r2 = typeof raw2 === 'string' ? JSON.parse(raw2) : raw2;
   if (mySeq !== getSeq() || !r2?.ok || !r2.url) return { ok: false, title: null, url: null, cached: false, custom: false };
 const ok2 = await playUrl(r2.url, mySeq, getSeq);
@@ -265,7 +299,7 @@ export function rerollCurrent(): void {
   if (currentTitle && !rerollExclude.includes(currentTitle)) rerollExclude = [...rerollExclude, currentTitle];
   ++activeSeq;
   stopAudio(0.25);
-  setToast('searching');
+  setPlaybackMode('searching');
   if (rerollDebounceTimer != null) clearTimeout(rerollDebounceTimer);
   rerollDebounceTimer = setTimeout(() => {
     rerollDebounceTimer = null;
@@ -280,22 +314,23 @@ async function runReroll(): Promise<void> {
   const mySeq = activeSeq;
   const getSeq = () => activeSeq;
   try {
-    const { ok, title, url } = await resolveAndPlay(appId, name, mySeq, getSeq, rerollExclude);
+    const { ok, title, url, cached } = await resolveAndPlay(appId, name, mySeq, getSeq, rerollExclude);
     if (mySeq !== activeSeq) return;
         if (ok) {
       currentTitle = title;
       currentUrl = url;
       pendingConfirmAppId = confirmModeOn() ? appId : null;
-      setToast('ready', title);
+      setPlaybackMode('ready');
+      if (!cached) void refreshCacheInfo();
     } else {
       if (currentUrl) await playUrl(currentUrl, mySeq, getSeq);
-      if (mySeq === activeSeq) setToast('ready', currentTitle);
+      if (mySeq === activeSeq) setPlaybackMode('ready');
     }
   } catch (e) {
     warn('rerollCurrent failed', e);
     if (mySeq === activeSeq) {
       if (currentUrl) await playUrl(currentUrl, mySeq, getSeq);
-      setToast('ready', currentTitle);
+      setPlaybackMode('ready');
     }
   }
 }
@@ -310,12 +345,12 @@ function discardPending(keepAppId: number | null = null) {
   const id = pendingConfirmAppId;
   if (id == null || id === keepAppId) return;
   pendingConfirmAppId = null;
-  void invalidateAudio({ app_id: id }).catch((e) => warn('failed to discard pending song', e));
+  void invalidateAudio(id).then(() => { void refreshCacheInfo(); }).catch((e) => warn('failed to discard pending song', e));
 }
 
 export function acceptCurrent(): void {
   pendingConfirmAppId = null;
-  setToast('off');
+  setPlaybackMode('off');
 }
 
 export function getPendingConfirmAppId(): number | null {
@@ -375,6 +410,16 @@ export function subscribeCacheWindow(fn: (open: boolean) => void): () => void {
   return () => { cacheWindowListeners = cacheWindowListeners.filter((x) => x !== fn); };
 }
 
+let mainWindowOpen = false;
+
+export function setMainWindowOpen(open: boolean) {
+  mainWindowOpen = open;
+}
+
+export function getMainWindowOpen(): boolean {
+  return mainWindowOpen;
+}
+
 let gCacheInfoListeners: ((info: CacheInfo) => void)[] = [];
 
 export function setGlobalCacheInfo(info: CacheInfo) {
@@ -384,6 +429,16 @@ export function setGlobalCacheInfo(info: CacheInfo) {
 export function subscribeCacheInfo(fn: (info: CacheInfo) => void): () => void {
   gCacheInfoListeners.push(fn);
   return () => { gCacheInfoListeners = gCacheInfoListeners.filter((x) => x !== fn); };
+}
+
+export async function refreshCacheInfo() {
+  try {
+    const raw = await getCacheInfo();
+    const info = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    if (info?.ok) setGlobalCacheInfo({ count: info.count, bytes: info.bytes });
+  } catch (e) {
+    warn('refreshCacheInfo failed', e);
+  }
 }
 
 const ignoredSet = new Set<number>();
@@ -407,7 +462,7 @@ export function isAppIgnored(appId: number): boolean {
 
 export async function setAppIgnored(appId: number, value: boolean): Promise<boolean> {
 	try {
-		const raw = await setIgnoredBackend({ app_id: appId, value });
+		const raw = await setIgnoredBackend(appId, value);
 		const resp = typeof raw === 'string' ? JSON.parse(raw) : raw;
 		if (!resp?.ok) return false;
 		if (value) ignoredSet.add(appId);
@@ -415,7 +470,7 @@ export async function setAppIgnored(appId: number, value: boolean): Promise<bool
 		if (value && currentAppId === appId) {
 			++activeSeq;
 			stopAudio(0.3);
-			setToast('off');
+			setPlaybackMode('off');
 		}
 		if (!value && currentAppId === appId) void reapplyForApp(appId);
 		return true;
@@ -433,7 +488,7 @@ async function playForApp(appId: number) {
     if (shouldSuppressPlayback(appId)) return;
     if (currentAppId === appId && audioEl && !audioEl.paused) return;
     if (pendingAppId != null && pendingAppId !== appId) {
-      void invalidateAudio({ app_id: pendingAppId });
+      void invalidateAudio(pendingAppId);
       pendingAppId = null;
     }
     currentAppId = appId;
@@ -443,19 +498,21 @@ async function playForApp(appId: number) {
     currentTitle = null;
     currentUrl = null;
     rerollExclude = [];
+    notifyContext();
     const name = await resolveGameName(appId);
     if (mySeq !== activeSeq) return;
     if (!name) { warn('no name for', appId); return; }
     currentGameName = name;
+    notifyContext();
 
         const searchingTimer = setTimeout(() => {
-  if (mySeq === activeSeq) setToast('searching', null);
+  if (mySeq === activeSeq) setPlaybackMode('searching');
 }, 350);
 
-        const { ok, title, url, cached } = await resolveAndPlay(appId, name, mySeq, getSeq, [], (isCached) => {
+        const { ok, title, url, cached, custom } = await resolveAndPlay(appId, name, mySeq, getSeq, [], (isCached) => {
       if (isCached) {
         clearTimeout(searchingTimer);
-        if (mySeq === activeSeq) setToast('off');
+        if (mySeq === activeSeq) setPlaybackMode('off');
       }
     });
     clearTimeout(searchingTimer);
@@ -464,15 +521,17 @@ async function playForApp(appId: number) {
       currentTitle = title;
       currentUrl = url;
       pendingConfirmAppId = confirmModeOn() && !cached ? appId : null;
-      if (!state.settings.manual_search) setToast('off');
-      else if (cached) setToast('off');
-      else setToast('ready', title);
+      notifyContext();
+      if (!state.settings.manual_search) setPlaybackMode('off');
+      else if (cached) setPlaybackMode('off');
+      else setPlaybackMode('ready');
+      if (!cached && !custom) void refreshCacheInfo();
     } else {
-      setToast('off');
+      setPlaybackMode('off');
     }
   } catch (e) {
     warn('playForApp crashed', e);
-    if (mySeq === activeSeq) setToast('off');
+    if (mySeq === activeSeq) setPlaybackMode('off');
   }
 }
 
@@ -533,9 +592,9 @@ function pollOnce() {
     discardPending(finalId);
     stopAudio();
     if (finalId === null) {
-      if (pendingAppId != null) { void invalidateAudio({ app_id: pendingAppId }); pendingAppId = null; }
+      if (pendingAppId != null) { void invalidateAudio(pendingAppId); pendingAppId = null; }
       currentAppId = null;
-      setToast('off');
+      setPlaybackMode('off');
     }
     else void playForApp(finalId);
   }, NAV_DEBOUNCE_MS);
@@ -582,7 +641,7 @@ function shouldSuppressPlayback(appId: number): boolean {
 function haltPlayback() {
   ++activeSeq;
   stopAudio(0.4);
-  setToast('off');
+  setPlaybackMode('off');
 }
 
 export function registerLaunchStop() {
@@ -641,7 +700,7 @@ function isAnySteamWindowFocused(): boolean {
 }
 
 function checkFocusOnce() {
-	if (libWindowOpen || cacheWindowOpen) return;
+	if (libWindowOpen || cacheWindowOpen || mainWindowOpen) return;
 	if (!state.settings.stop_on_launch && (runningApps.size > 0 || Date.now() < recentLaunchUntil)) return;
 	const a = audioEl;
 	if (!isAnySteamWindowFocused()) {

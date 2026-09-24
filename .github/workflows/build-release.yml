@@ -21,26 +21,19 @@ jobs:
         with:
           ref: ${{ inputs.tag || github.event.release.tag_name }}
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
 
       - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
+        run: bun install --frozen-lockfile
 
       - name: Build plugin
-        run: pnpm run build
+        run: bun run build
 
       - name: Stage release files
         run: |
           mkdir -p _release/game-theme-song
-          cp plugin.json _release/game-theme-song/
+          cp millennium.toml _release/game-theme-song/
           cp README.md _release/game-theme-song/
           cp LICENSE _release/game-theme-song/
           cp -r backend _release/game-theme-song/

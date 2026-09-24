@@ -1,4 +1,4 @@
-﻿if type(jit) == "table" and type(jit.off) == "function" then
+if type(jit) == "table" and type(jit.off) == "function" then
     pcall(jit.off)
     pcall(jit.flush)
 end
@@ -17,7 +17,7 @@ local function resolve_plugin_dir()
     if source:sub(1, 1) == "@" then source = source:sub(2) end
     local dir = source:match("^(.+)[/\\]backend[/\\][^/\\]+$")
     if dir then return dir end
-    return millennium.steam_path() .. "/millennium/plugins/Game Theme Song"
+    return millennium.steam_path() .. "/millennium/plugins/Game Theme Song on Game Page"
 end
 
 local SEP = package.config:sub(1, 1)
@@ -37,12 +37,49 @@ local function join(...)
 end
 
 local PLUGIN_DIR = norm_path(resolve_plugin_dir())
-local CACHE_FILE = join(PLUGIN_DIR, "cache.json")
-local CONFIG_FILE = join(PLUGIN_DIR, "settings.json")
-local CUSTOM_FILE = join(PLUGIN_DIR, "custom.json")
-local IGNORE_FILE = join(PLUGIN_DIR, "ignored.json")
-local RESOLVE_MARKER = join(PLUGIN_DIR, "resolve.lock")
-local BOOT_MARKER = join(PLUGIN_DIR, "boot.lock")
+
+local function resolve_data_dir()
+    local install = millennium.get_install_path() or ""
+    install = install:gsub("/", SEP):gsub(SEP .. "+$", "")
+    return install .. SEP .. "plugins" .. SEP .. "game-theme-song-data"
+end
+
+local DATA_DIR = norm_path(resolve_data_dir())
+
+local function ensure_data_dir()
+    if not fs then return end
+    if fs.exists(DATA_DIR) then return end
+    pcall(fs.create_directories, DATA_DIR)
+end
+
+local function migrate_data_file(name)
+    local src = join(PLUGIN_DIR, name)
+    local dst = join(DATA_DIR, name)
+    if fs and fs.exists(dst) then return end
+    local f = io.open(src, "rb")
+    if not f then return end
+    local content = f:read("*a")
+    f:close()
+    if content and content ~= "" then
+        local out = io.open(dst, "wb")
+        if out then out:write(content); out:close() end
+    end
+end
+
+local function migrate_all_data()
+    ensure_data_dir()
+    migrate_data_file("settings.json")
+    migrate_data_file("cache.json")
+    migrate_data_file("custom.json")
+    migrate_data_file("ignored.json")
+end
+
+local CACHE_FILE = join(DATA_DIR, "cache.json")
+local CONFIG_FILE = join(DATA_DIR, "settings.json")
+local CUSTOM_FILE = join(DATA_DIR, "custom.json")
+local IGNORE_FILE = join(DATA_DIR, "ignored.json")
+local RESOLVE_MARKER = join(DATA_DIR, "resolve.lock")
+local BOOT_MARKER = join(DATA_DIR, "boot.lock")
 local AUDIO_DIR = join(norm_path(millennium.steam_path()), "steamui", "game_theme_song")
 local LOOPBACK_BASE = "https://steamloopback.host/game_theme_song/"
 local CONFIG_VERSION = 14
@@ -1094,14 +1131,31 @@ return json.encode({ ok = false, error = err_code })
     return result
 end
 
-function get_theme_audio(app_id, force_refresh, game_name)
+---@ffi
+---Resolve the theme song for a game, downloading it if needed.
+---@param app_id number Steam app id
+---@param game_name string Display name of the game
+---@param force_refresh boolean Bypass the on-disk cache
+---@return string JSON { ok, url, title, cached, custom }
+function get_theme_audio(app_id, game_name, force_refresh)
     return resolve_theme(app_id, force_refresh, game_name, nil)
 end
 
-function reroll_theme(app_id, exclude, force_refresh, game_name)
+---@ffi
+---Resolve a different theme song, skipping the excluded titles.
+---@param app_id number Steam app id
+---@param game_name string Display name of the game
+---@param force_refresh boolean Bypass the on-disk cache
+---@param exclude string JSON array of titles to skip
+---@return string JSON { ok, url, title, cached, custom }
+function reroll_theme(app_id, game_name, force_refresh, exclude)
     return resolve_theme(app_id, force_refresh, game_name, exclude)
 end
 
+---@ffi
+---Delete any downloaded theme audio for a game.
+---@param app_id number Steam app id
+---@return string JSON { ok }
 function invalidate_audio(app_id)
     local key = tostring(app_id)
     if fs and fs.remove then
@@ -1127,6 +1181,9 @@ local function custom_ext(filename)
     return CUSTOM_EXTS[ext:lower()]
 end
 
+---@ffi
+---List games that have a custom music file set.
+---@return string JSON { ok, items }
 function get_custom_list()
   return run_io("get_custom_list", function()
     if custom_list_cache then return custom_list_cache end
@@ -1142,10 +1199,18 @@ function get_custom_list()
     return custom_list_cache
   end)
 end
+---@ffi
+---List games whose auto-search is muted.
+---@return string JSON { ok, items }
 function get_ignored_list()
     return json.encode({ ok = true, items = ignored })
 end
 
+---@ffi
+---Mute or unmute auto-search for a game.
+---@param app_id number Steam app id
+---@param value boolean true to mute
+---@return string JSON { ok }
 function set_ignored(app_id, value)
     local key = tostring(app_id)
     if key == "" or key == "nil" then return json.encode({ ok = false, error = "missing_app_id" }) end
@@ -1186,6 +1251,10 @@ local function store_custom(app_id, game_name, filename, title, data, ext_hint, 
     return json.encode({ ok = true, url = url })
 end
 
+---@ffi
+---Start a chunked custom music upload for a game.
+---@param app_id number Steam app id
+---@return string JSON { ok }
 function set_custom_music_begin(app_id)
     local key = tostring(app_id)
     if key == "" or key == "nil" then return json.encode({ ok = false, error = "missing_app_id" }) end
@@ -1193,6 +1262,11 @@ function set_custom_music_begin(app_id)
     return json.encode({ ok = true })
 end
 
+---@ffi
+---Append a base64 chunk to an in-flight upload.
+---@param app_id number Steam app id
+---@param chunk string base64 fragment
+---@return string JSON { ok }
 function set_custom_music_chunk(app_id, chunk)
     local key = tostring(app_id)
     local s = upload_sessions[key]
@@ -1204,7 +1278,14 @@ function set_custom_music_chunk(app_id, chunk)
     return json.encode({ ok = true })
 end
 
-function set_custom_music_finish(app_id, ext, name_b64, title_b64)
+---@ffi
+---Finish a chunked custom music upload and store the file.
+---@param app_id number Steam app id
+---@param ext string normalized audio extension
+---@param title_b64 string base64 track title
+---@param name_b64 string base64 game name
+---@return string JSON { ok, url }
+function set_custom_music_finish(app_id, ext, title_b64, name_b64)
     local ok, result = pcall(function()
         local key = tostring(app_id)
         local s = upload_sessions[key]
@@ -1219,6 +1300,10 @@ function set_custom_music_finish(app_id, ext, name_b64, title_b64)
     return result
 end
 
+---@ffi
+---Remove the custom music file for a game.
+---@param app_id number Steam app id
+---@return string JSON { ok }
 function clear_custom_music(app_id)
     local ok, result = pcall(function()
         local key = tostring(app_id)
@@ -1234,12 +1319,20 @@ save_custom()
     return result
 end
 
+---@ffi
+---Return the current plugin settings.
+---@return string JSON settings table
 function get_settings()
     local fresh = safe_decode(read_file(CONFIG_FILE))
     if type(fresh) == "table" then settings = merge_defaults(fresh, DEFAULT_SETTINGS) end
     return json.encode(settings)
 end
 
+---@ffi
+---Persist one settings key.
+---@param key string settings key
+---@param value string|number|boolean value to store
+---@return string JSON { ok }
 function set_setting(key, value)
     if DEFAULT_SETTINGS[key] == nil then return json.encode({ ok = false, error = "unknown_key" }) end
     settings[key] = value
@@ -1268,6 +1361,9 @@ local function audio_dir_sizes()
     return sizes
 end
 
+---@ffi
+---Return downloaded track count and total size.
+---@return string JSON { ok, count, bytes }
 function get_cache_info()
     return run_io("get_cache_info", function()
         local sizes = audio_dir_sizes()
@@ -1282,6 +1378,9 @@ function get_cache_info()
     end)
 end
 
+---@ffi
+---Delete every downloaded theme track.
+---@return string JSON { ok, removed }
 function clear_audio_cache()
     local ok, result = pcall(function()
         local removed = 0
@@ -1306,6 +1405,9 @@ end
     return result
 end
 
+---@ffi
+---List downloaded theme tracks.
+---@return string JSON { ok, items }
 function get_cache_list()
     return run_io("get_cache_list", function()
         local sizes = audio_dir_sizes()
@@ -1321,6 +1423,10 @@ function get_cache_list()
     end)
 end
 
+---@ffi
+---Delete the downloaded theme track for one game.
+---@param app_id number Steam app id
+---@return string JSON { ok, bytes }
 function clear_cache_for(app_id)
     local ok, result = pcall(function()
         local key = tostring(app_id)
@@ -1344,6 +1450,7 @@ end
 end
 
 local function on_load()
+    pcall(migrate_all_data)
     local prev_boot = tonumber(read_file(BOOT_MARKER) or "") or 0
     if prev_boot >= 1 then
         pcall(os.remove, CACHE_FILE)
