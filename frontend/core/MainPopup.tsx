@@ -1,11 +1,13 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { DialogBody, DialogBodyText, DialogButton, DialogButtonSecondary, DialogHeader, SliderField, ToggleField } from 'millennium';
-import { MdMusicNote, MdSkipNext, MdStop, MdCheckCircle, MdSettings, MdLibraryMusic, MdDownload, MdSearch, MdSportsEsports } from 'react-icons/md';
+import { MdMusicNote, MdSkipNext, MdStop, MdCheckCircle, MdSettings, MdLibraryMusic, MdDownload, MdSearch, MdSportsEsports, MdUploadFile } from 'react-icons/md';
 import { warn } from './log';
 import { getBackendSettings, setBackendSetting, getCacheInfo, getCustomList } from './api';
+import { readFileBase64 } from './base64';
+import { ACCEPT_EXTS, MAX_UPLOAD_BYTES, uploadCustomMusic } from '../settings/library';
 import {
   state, getAudioEl, setGlobalCustomCount, setGlobalCacheInfo, getCustomCount, subscribeCustomCount,
-  subscribeCacheInfo, subscribeContext, getContext, subscribePlayback, isPlaying,
+  subscribeCacheInfo, subscribeContext, getContext, subscribePlayback, isPlaying, reapplyForApp,
   rerollCurrent, acceptCurrent, stopAudio, getPendingConfirmAppId,
 } from './engine';
 import { LibraryModalContent } from '../settings/LibraryModal';
@@ -58,6 +60,9 @@ function NowPlayingTab(): React.JSX.Element {
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
   const [pending, setPending] = useState(getPendingConfirmAppId());
+  const [savingCustom, setSavingCustom] = useState(false);
+  const [customError, setCustomError] = useState<string | null>(null);
+  const customFileRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => subscribeContext(setCtx), []);
   useEffect(() => subscribePlayback(() => setPlaying(isPlaying())), []);
@@ -73,6 +78,38 @@ function NowPlayingTab(): React.JSX.Element {
     }, 500);
     return () => clearInterval(id);
   }, []);
+
+  const onCustomFilePicked = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    const appId = ctx.appId;
+    const gameName = ctx.gameName;
+    if (!file || appId == null || !gameName) return;
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setCustomError(`"${file.name}" is too large (maximum 50 MB).`);
+      return;
+    }
+    setSavingCustom(true);
+    setCustomError(null);
+    try {
+      const response = await uploadCustomMusic(appId, gameName, file.name, await readFileBase64(file));
+      if (!response?.ok) {
+        setCustomError(`Couldn't set music: ${response?.error ?? 'unknown error'}.`);
+        return;
+      }
+      try {
+        const raw = await getCustomList();
+        const info = typeof raw === 'string' ? JSON.parse(raw) : raw;
+        if (info?.ok && info.items) setGlobalCustomCount(Object.keys(info.items).length);
+      } catch (e) { warn('getCustomList failed', e); }
+      void reapplyForApp(appId);
+    } catch (e) {
+      warn('set custom failed', e);
+      setCustomError('Something went wrong while saving the file.');
+    } finally {
+      setSavingCustom(false);
+    }
+  };
 
   const mode = ctx.mode;
   const hasGame = ctx.appId != null && ctx.gameName != null;
@@ -168,7 +205,19 @@ function NowPlayingTab(): React.JSX.Element {
                 </span>
               </DialogButtonSecondary>
             ) : null}
+            {hasGame && !searching && (
+              <DialogButtonSecondary disabled={savingCustom} onClick={() => customFileRef.current?.click()}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                  <MdUploadFile size={16} />
+                  {savingCustom ? 'Saving…' : 'Set custom song'}
+                </span>
+              </DialogButtonSecondary>
+            )}
           </div>
+          {customError && (
+            <div style={{ color: 'var(--color-offline, #e05252)', fontSize: '12px', marginTop: 8 }}>{customError}</div>
+          )}
+          <input ref={customFileRef} type="file" accept={ACCEPT_EXTS} hidden onChange={(e) => void onCustomFilePicked(e)} />
         </DialogBody>
       )}
     </div>
