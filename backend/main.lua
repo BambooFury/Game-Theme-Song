@@ -1483,4 +1483,15 @@ local function on_unload()
     pcall(save_ignored)
 end
 
-return { on_load = on_load, on_unload = on_unload }
+local MUSIC_BUTTON_PATCH = {
+    find = [[\.AppButtonsContainer,children:\[\(0,(\w+)\.jsx\)\(\w+,\{\.\.\.this\.props\}\)]],
+    file = [[chunk~[0-9a-f]+\.js]],
+    transforms = {
+        {
+            match = [[\.AppButtonsContainer,children:\[\(0,(\w+)\.jsx\)]],
+            replace = [[\.AppButtonsContainer,children:[(0,\1.jsx)(#{{self}}?.hookedMusicButton?.MusicButton||(()=>null),{}),(0,\1.jsx]],
+        },
+    },
+}
+
+return { on_load = on_load, on_unload = on_unload, patches = { MUSIC_BUTTON_PATCH } }
