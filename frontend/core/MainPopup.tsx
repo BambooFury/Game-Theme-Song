@@ -160,6 +160,13 @@ function NowPlayingTab(): React.JSX.Element {
                 <MdCheckCircle size={18} />
                 <span style={{ fontSize: '13px' }}>Song saved</span>
               </span>
+            ) : state.settings.manual_search && !searching ? (
+              <DialogButtonSecondary onClick={() => rerollCurrent()}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                  <MdSearch size={16} />
+                  Search again
+                </span>
+              </DialogButtonSecondary>
             ) : null}
           </div>
         </DialogBody>

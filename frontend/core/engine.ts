@@ -241,8 +241,9 @@ async function resolveAndPlay(
   getSeq: () => number,
   exclude: string[],
   onResolved?: (cached: boolean) => void,
+  force = false,
   ): Promise<{ ok: boolean; title: string | null; url: string | null; cached: boolean; custom: boolean }> {
-  const rerolling = exclude.length > 0;
+  const rerolling = exclude.length > 0 || force;
   const excludeArg = JSON.stringify(exclude);
   let resp: any;
   try {
@@ -314,7 +315,7 @@ async function runReroll(): Promise<void> {
   const mySeq = activeSeq;
   const getSeq = () => activeSeq;
   try {
-    const { ok, title, url, cached } = await resolveAndPlay(appId, name, mySeq, getSeq, rerollExclude);
+    const { ok, title, url, cached } = await resolveAndPlay(appId, name, mySeq, getSeq, rerollExclude, undefined, true);
     if (mySeq !== activeSeq) return;
         if (ok) {
       currentTitle = title;

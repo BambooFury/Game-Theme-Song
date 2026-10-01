@@ -573,8 +573,8 @@ local function score_candidate(c, game_name)
     local needle = norm_words(game_name):match("^%s*(.-)%s*$")
     if needle ~= "" and title:find(needle, 1, true) then
         score = score + 45
-    elseif words >= 2 then
-        score = score - 120
+    elseif words >= 2 and hits < words then
+        score = score - math.floor(150 * (words - hits) / words)
     end
     if c.genre and tostring(c.genre):lower():find("soundtrack", 1, true) then
         score = score + 10
