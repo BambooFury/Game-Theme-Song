@@ -81,6 +81,8 @@ local IGNORE_FILE = join(DATA_DIR, "ignored.json")
 local RESOLVE_MARKER = join(DATA_DIR, "resolve.lock")
 local BOOT_MARKER = join(DATA_DIR, "boot.lock")
 local AUDIO_DIR = join(norm_path(millennium.steam_path()), "steamui", "game_theme_song")
+local CUSTOM_BACKUP_DIR = norm_path(join(norm_path(millennium.steam_path()), "millennium", "game-theme-song-custom"))
+local CUSTOM_BACKUP_FILE = join(CUSTOM_BACKUP_DIR, "custom.json")
 local LOOPBACK_BASE = "https://steamloopback.host/game_theme_song/"
 local CONFIG_VERSION = 14
 
@@ -1221,6 +1223,61 @@ end
 
 local upload_sessions = {}
 
+local function copy_file(src, dst)
+    local f = io.open(src, "rb")
+    if not f then return false end
+    local data = f:read("*a")
+    f:close()
+    if not data then return false end
+    return write_file(dst, data)
+end
+
+local function sync_custom_backup()
+    if not fs then return end
+    pcall(fs.create_directories, CUSTOM_BACKUP_DIR)
+    local s = safe_encode(custom)
+    if s then write_file_atomic(CUSTOM_BACKUP_FILE, s) end
+    for _, entry in pairs(custom) do
+        if type(entry) == "table" and entry.file then
+            local src = join(AUDIO_DIR, entry.file)
+            local dst = join(CUSTOM_BACKUP_DIR, entry.file)
+            if fs.exists and fs.exists(src) and not fs.exists(dst) then copy_file(src, dst) end
+        end
+    end
+end
+
+local function restore_custom_backup()
+    if not fs then return end
+    pcall(fs.create_directories, AUDIO_DIR)
+    if fs.exists and fs.exists(CUSTOM_BACKUP_FILE) then
+        local backup = scrub_state(safe_decode(read_file(CUSTOM_BACKUP_FILE)) or {})
+        local changed = false
+        for key, entry in pairs(backup) do
+            if type(entry) == "table" and type(entry.file) == "string" and entry.file ~= "" then
+                local src = join(CUSTOM_BACKUP_DIR, entry.file)
+                if fs.exists(src) then
+                    local dst = join(AUDIO_DIR, entry.file)
+                    if not fs.exists(dst) then copy_file(src, dst) end
+                    if not custom[key] then
+                        custom[key] = {
+                            file = entry.file,
+                            title = sanitize_text(tostring(entry.title or "")),
+                            name = sanitize_text(tostring(entry.name or "")),
+                            ts = tonumber(entry.ts) or os.time(),
+                        }
+                        changed = true
+                    end
+                end
+            end
+        end
+        if changed then
+            save_custom()
+            custom_list_cache = nil
+        end
+    end
+    sync_custom_backup()
+end
+
 local function store_custom(app_id, game_name, filename, title, data, ext_hint, title_b64, name_b64)
     if not (fs and fs.create_directories) then return json.encode({ ok = false, error = "fs_unsupported" }) end
     local key = tostring(app_id)
@@ -1246,6 +1303,7 @@ local function store_custom(app_id, game_name, filename, title, data, ext_hint, 
     local ts = os.time()
     custom[key] = { file = fname, title = clean_title, name = resolved_name or "", ts = ts }
     save_custom()
+    sync_custom_backup()
     custom_list_cache = nil
     local url = LOOPBACK_BASE .. fname .. "?v=" .. tostring(ts)
     return json.encode({ ok = true, url = url })
@@ -1308,11 +1366,15 @@ function clear_custom_music(app_id)
     local ok, result = pcall(function()
         local key = tostring(app_id)
         if fs and fs.remove then
-            for e in pairs(CUSTOM_EXTS) do pcall(fs.remove, join(AUDIO_DIR, "custom_" .. key .. "." .. e)) end
+            for e in pairs(CUSTOM_EXTS) do
+                pcall(fs.remove, join(AUDIO_DIR, "custom_" .. key .. "." .. e))
+                pcall(fs.remove, join(CUSTOM_BACKUP_DIR, "custom_" .. key .. "." .. e))
+            end
         end
-custom[key] = nil
-save_custom()
-    custom_list_cache = nil
+        custom[key] = nil
+        save_custom()
+        sync_custom_backup()
+        custom_list_cache = nil
         return json.encode({ ok = true })
     end)
     if not ok then logger:warn("clear_custom_music crashed: " .. tostring(result)); return json.encode({ ok = false, error = "internal_error" }) end
@@ -1474,6 +1536,7 @@ local function on_load()
     end
     write_file(BOOT_MARKER, tostring(prev_boot + 1))
     load_state()
+    restore_custom_backup()
     local prev = read_file(RESOLVE_MARKER)
     if prev and prev ~= "" then
         cache[prev] = nil
