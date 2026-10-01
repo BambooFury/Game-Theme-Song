@@ -1240,7 +1240,7 @@ local function store_custom(app_id, game_name, filename, title, data, ext_hint, 
     local fname = "custom_" .. key .. "." .. ext
     for e in pairs(CUSTOM_EXTS) do pcall(fs.remove, join(AUDIO_DIR, "custom_" .. key .. "." .. e)) end
     if not write_file(join(AUDIO_DIR, fname), bytes) then return json.encode({ ok = false, error = "write_failed" }) end
-    local clean_title = sanitize_text(tostring(resolved_title or ""):gsub("%.[%w]+$", ""))
+    local clean_title = sanitize_text((tostring(resolved_title or ""):gsub("%.[%w]+$", "")))
     if clean_title == "" then clean_title = "Custom track" end
     resolved_name = sanitize_text(resolved_name or "")
     local ts = os.time()
