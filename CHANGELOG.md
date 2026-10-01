@@ -1,5 +1,59 @@
 # Changelog
 
+## [2.0.0](https://github.com/BambooFury/Game-Theme-Song/compare/v1.6.4...v2.0.0) (2026-10-01)
+
+
+### Features
+
+* add game page note button and popup with now-playing and settings tabs ([f37d19a](https://github.com/BambooFury/Game-Theme-Song/commit/f37d19a4958354e8645dc59777d03f1e6b204ce1))
+* add plugin.json for plugin database and auto version bumps ([76afea1](https://github.com/BambooFury/Game-Theme-Song/commit/76afea16e0b3396bbb546cf518b749ffc1dcc35c))
+* embed library and cache as tabs with react-icons ([62fe391](https://github.com/BambooFury/Game-Theme-Song/commit/62fe391be413959d1a5cc31b2249abb77c1071a0))
+* export context state from engine, add react-icons ([8893563](https://github.com/BambooFury/Game-Theme-Song/commit/88935631ce83d7b4c4672a436e545ef82298794e))
+* improve track matching with phrase scoring, quality threshold and khinsider browser headers ([245a851](https://github.com/BambooFury/Game-Theme-Song/commit/245a851a5e441acf7390b9927b377f0548b24643))
+* inject game page music button via native steam js patch ([2f1cc68](https://github.com/BambooFury/Game-Theme-Song/commit/2f1cc68aa67d52be06c5187d30143ac56b083c0d))
+* live refresh downloaded music list and counts ([28c9c07](https://github.com/BambooFury/Game-Theme-Song/commit/28c9c07610e3506cc439ffd3460833e2309354cd))
+* persist custom music in backup folder and restore it on install ([f28e83c](https://github.com/BambooFury/Game-Theme-Song/commit/f28e83c7125d4df9ba78f8aa91612e1970362729))
+* real-time cache and custom music count updates ([84dd740](https://github.com/BambooFury/Game-Theme-Song/commit/84dd740cf49be088fca00f00e9583e21a73fb086))
+* redesign custom music section with icon header and empty states ([6de66ea](https://github.com/BambooFury/Game-Theme-Song/commit/6de66ea3de0d97c599434dbd44373ab7a818a86c))
+* redesign no-game empty state with centered icon ([15c6fa3](https://github.com/BambooFury/Game-Theme-Song/commit/15c6fa39037cf429b23cd24be44e874bb8a7f733))
+* remove plugin settings entry, open popup only from game page button ([ffefa75](https://github.com/BambooFury/Game-Theme-Song/commit/ffefa757e3e7459b27dbb23fa55b81ca8bf311e0))
+* scale phrase penalty by word coverage and add search again button ([a1ceda9](https://github.com/BambooFury/Game-Theme-Song/commit/a1ceda96aa9aeb75ed9ad013e04f1716bc0596c6))
+* show checkmark after keeping song, use react-icons everywhere ([adbb6fa](https://github.com/BambooFury/Game-Theme-Song/commit/adbb6fa73683722967c232d4a3c10169398dbc37))
+
+
+### Bug Fixes
+
+* apply dark theme to popup on open ([2e34486](https://github.com/BambooFury/Game-Theme-Song/commit/2e3448672e4039ab0fd8a56da9185e5aaf9133a0))
+* compact tabs, searching state, min window size, row layout ([dc01b31](https://github.com/BambooFury/Game-Theme-Song/commit/dc01b3152f9824a524284a03f73c5db4d10cf11b))
+* handle object returns from v2 ffi in custom music upload ([215593e](https://github.com/BambooFury/Game-Theme-Song/commit/215593e1499c47e380f5fc9a428573895a4169f1))
+* keep music playing when main popup is open ([8dc3e8e](https://github.com/BambooFury/Game-Theme-Song/commit/8dc3e8e2abbc241231e15b8c48e941e9281136e0))
+* move state files to persistent data directory ([eace5f9](https://github.com/BambooFury/Game-Theme-Song/commit/eace5f988e67e7a8ee5b8bc3b5ca7627acc4c6ed))
+* patch replacement syntax and remove diagnostics ([a6b005e](https://github.com/BambooFury/Game-Theme-Song/commit/a6b005ec64602d91b829b9090cc64a84da2b6623))
+* place music button after last existing button ([3e0fd7e](https://github.com/BambooFury/Game-Theme-Song/commit/3e0fd7e6f9838be5a8aae6ea8abc2feb129c8f58))
+* reduce game page button injection delay from 10s to polling ([8be393b](https://github.com/BambooFury/Game-Theme-Song/commit/8be393b6480c94b5bf5f20cda92ae0271c4184b5))
+* remove icon header from custom music section ([64c9ac8](https://github.com/BambooFury/Game-Theme-Song/commit/64c9ac8c9fd0331527837607bcbde8737f9ec7b8))
+* resolve TypeScript errors across frontend ([a8af360](https://github.com/BambooFury/Game-Theme-Song/commit/a8af360397aebe9fadd14da2009048fe14a780eb))
+* restore button styling and event-driven injection ([4f0590c](https://github.com/BambooFury/Game-Theme-Song/commit/4f0590c71ba91def4f69b29b1cc6e44f50e80827))
+* reuse existing desktop window for button injection ([e069663](https://github.com/BambooFury/Game-Theme-Song/commit/e0696635006b9dd4c67941f69a56894f4b746129))
+* scoped tab hover styles via injected CSS ([b791655](https://github.com/BambooFury/Game-Theme-Song/commit/b79165529b686e30bb57bf8c59e6b3ae9be06328))
+* sort games with custom music first in library list ([c799cf9](https://github.com/BambooFury/Game-Theme-Song/commit/c799cf9003666a792c1fb46ea965ba64cf7ff218))
+* store full custom track title instead of one broken byte ([6403614](https://github.com/BambooFury/Game-Theme-Song/commit/640361485925ba422796c3eed8b10b975148fb3a))
+* tab hover highlights single button and removes clipped border ([57b375d](https://github.com/BambooFury/Game-Theme-Song/commit/57b375d156808ac07b6f6b191c011d3848e21455))
+* use AddWindowCreateHook for game page button injection ([6f7d668](https://github.com/BambooFury/Game-Theme-Song/commit/6f7d668cec48c8305b480f0adf993fb4e3527529))
+* use DialogButton for clickable tabs with bigger spacing ([348f162](https://github.com/BambooFury/Game-Theme-Song/commit/348f162b448e82bfae6e3946d17b73e205325ffe))
+
+
+### Documentation
+
+* update readme for custom music backup, tabs and matching improvements ([3201119](https://github.com/BambooFury/Game-Theme-Song/commit/3201119ab3d2cde5683b768b24eb8f4d663805e7))
+
+
+### Maintenance
+
+* prepare release v2.0.0 ([aa28e4c](https://github.com/BambooFury/Game-Theme-Song/commit/aa28e4cd6efff14cdae78a114b1660d3a115ccc1))
+* remove debug artifact ([3da2089](https://github.com/BambooFury/Game-Theme-Song/commit/3da2089da3b4e6337640c67c739b1106563d1560))
+* remove debug artifact ([d58ae3b](https://github.com/BambooFury/Game-Theme-Song/commit/d58ae3bea11152bc93cb084af24c40068d4918eb))
+
 ## [1.6.4](https://github.com/BambooFury/Game-Theme-Song/compare/v1.6.3...v1.6.4) (2026-08-16)
 
 
