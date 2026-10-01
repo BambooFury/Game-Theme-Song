@@ -3,7 +3,7 @@ import { DialogBody, DialogBodyText, DialogButton, DialogButtonSecondary, Dialog
 import { warn } from '../core/log';
 import { base64ToUtf8 } from '../core/base64';
 import { clearAudioCache, clearCacheFor, getCacheList } from '../core/api';
-import { getCurrentAppId, getPendingConfirmAppId, resetPlayback, setGlobalCacheInfo, stopAudio } from '../core/engine';
+import { getCurrentAppId, getPendingConfirmAppId, resetPlayback, setGlobalCacheInfo, stopAudio, subscribeCacheList } from '../core/engine';
 import type { CacheItem } from '../core/types';
 import { getLibraryApps } from './library';
 
@@ -24,8 +24,11 @@ export const CacheModalContent: React.FC = () => {
   const [clearingAll, setClearingAll] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
+  const [cacheListVersion, setCacheListVersion] = useState(0);
 
   const broadcast = (list: CacheItem[]) => setGlobalCacheInfo({ count: list.length, bytes: list.reduce((total, item) => total + item.bytes, 0) });
+
+  useEffect(() => subscribeCacheList(setCacheListVersion), []);
 
   useEffect(() => {
     void (async () => {
@@ -56,7 +59,7 @@ export const CacheModalContent: React.FC = () => {
         setItems([]);
       }
     })();
-  }, []);
+  }, [cacheListVersion]);
 
   const onDelete = useCallback(async (item: CacheItem) => {
     setBusyId(item.appid);

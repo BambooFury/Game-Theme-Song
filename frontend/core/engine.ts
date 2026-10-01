@@ -352,6 +352,7 @@ function discardPending(keepAppId: number | null = null) {
 export function acceptCurrent(): void {
   pendingConfirmAppId = null;
   setPlaybackMode('off');
+  bumpCacheList();
 }
 
 export function getPendingConfirmAppId(): number | null {
@@ -432,11 +433,25 @@ export function subscribeCacheInfo(fn: (info: CacheInfo) => void): () => void {
   return () => { gCacheInfoListeners = gCacheInfoListeners.filter((x) => x !== fn); };
 }
 
+let cacheListVersion = 0;
+let cacheListListeners: ((version: number) => void)[] = [];
+
+export function subscribeCacheList(fn: (version: number) => void): () => void {
+  cacheListListeners.push(fn);
+  return () => { cacheListListeners = cacheListListeners.filter((x) => x !== fn); };
+}
+
+function bumpCacheList() {
+  cacheListVersion += 1;
+  for (const fn of [...cacheListListeners]) fn(cacheListVersion);
+}
+
 export async function refreshCacheInfo() {
   try {
     const raw = await getCacheInfo();
     const info = typeof raw === 'string' ? JSON.parse(raw) : raw;
     if (info?.ok) setGlobalCacheInfo({ count: info.count, bytes: info.bytes });
+    bumpCacheList();
   } catch (e) {
     warn('refreshCacheInfo failed', e);
   }
