@@ -574,6 +574,7 @@ local function score_candidate(c, game_name)
     if needle ~= "" and title:find(needle, 1, true) then
         score = score + 45
         c.exact = true
+        if title:sub(2, #needle + 1) == needle then score = score + 25 end
     elseif words >= 2 and hits < words then
         score = score - math.floor(150 * (words - hits) / words)
     end
