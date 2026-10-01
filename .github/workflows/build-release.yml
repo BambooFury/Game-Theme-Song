@@ -34,6 +34,7 @@ jobs:
         run: |
           mkdir -p _release/game-theme-song
           cp millennium.toml _release/game-theme-song/
+          cp plugin.json _release/game-theme-song/
           cp README.md _release/game-theme-song/
           cp LICENSE _release/game-theme-song/
           cp -r backend _release/game-theme-song/
