@@ -570,6 +570,20 @@ local function score_candidate(c, game_name)
         score = score + math.floor(60 * hits / words)
         if hits == words then score = score + 40 end
     end
+    local needle = norm_words(game_name):match("^%s*(.-)%s*$")
+    if needle ~= "" and title:find(needle, 1, true) then
+        score = score + 45
+    elseif words >= 2 then
+        score = score - 120
+    end
+    if c.genre and tostring(c.genre):lower():find("soundtrack", 1, true) then
+        score = score + 10
+    end
+    if (tonumber(c.plays) or 0) >= 50000 then
+        score = score + 10
+    elseif (tonumber(c.plays) or 0) >= 5000 then
+        score = score + 5
+    end
     local game_nums = {}
     for w in norm_words(game_name):gmatch("%S+") do
         if w:match("^%d+$") then game_nums[w] = true end
@@ -637,7 +651,7 @@ if sig4 == "\26\69\223\163" then return true end
     return false, head:gsub("%c", "."):sub(1, 16)
 end
 
-local function download_file(key, ext, url, ua)
+local function download_file(key, ext, url, ua, headers)
     if not fs or not http or not http.download then return nil, "download_unsupported" end
     pcall(fs.create_directories, AUDIO_DIR)
     local filename = key .. "." .. ext
@@ -645,7 +659,7 @@ local function download_file(key, ext, url, ua)
     for _, e in ipairs(AUDIO_EXTS) do
         if e ~= ext then pcall(fs.remove, join(AUDIO_DIR, key .. "." .. e)) end
     end
-    local result, err = http.download(url, path, { timeout = 180, user_agent = ua })
+    local result, err = http.download(url, path, { timeout = 180, user_agent = ua, headers = headers })
     if not result or not result.success or result.status ~= 200 or (result.bytes_written or 0) <= 0 then
         pcall(fs.remove, path)
         local detail = err or (result and ("status_" .. tostring(result.status))) or "unknown"
@@ -830,9 +844,19 @@ end
 
 local KHINSIDER_BASE = "https://downloads.khinsider.com"
 local BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+local KH_HEADERS = {
+    ["accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    ["accept-language"] = "en-US,en;q=0.9",
+    ["sec-fetch-mode"] = "navigate",
+    ["sec-fetch-site"] = "same-origin",
+    ["upgrade-insecure-requests"] = "1",
+}
 
-local function khinsider_get(url)
-    local resp, err = http.request(url, { method = "GET", timeout = 20, user_agent = BROWSER_UA })
+local function khinsider_get(url, referer)
+    local headers = {}
+    for k, v in pairs(KH_HEADERS) do headers[k] = v end
+    if referer then headers["referer"] = referer end
+    local resp, err = http.request(url, { method = "GET", timeout = 20, user_agent = BROWSER_UA, headers = headers })
     if resp and resp.status == 200 and resp.body then return cap_body(resp.body), nil end
     return nil, tostring(err or (resp and resp.status) or "no_response")
 end
@@ -891,16 +915,18 @@ local function khinsider_resolve(game_name, key, exclude_set, dl_base)
     if not http_available() then return nil, "http_module_missing" end
     local query = tostring(game_name):gsub("\226\132\162", ""):gsub("\194\174", ""):gsub("\194\169", "")
     local now = os.time()
+    local search_url = KHINSIDER_BASE .. "/search?search=" .. url_encode(query)
     local album, tracks
     local cached = mem_cache.khinsider[query]
     if cached and (now - cached.ts) < 180 then
         album, tracks = cached.album, cached.tracks
     else
-        local body, err = khinsider_get(KHINSIDER_BASE .. "/search?search=" .. url_encode(query))
+        local body, err = khinsider_get(search_url, KHINSIDER_BASE)
         if not body then return nil, "khinsider_search_failed: " .. tostring(err) end
         album = khinsider_pick_album(body, query)
         if not album then return nil, "khinsider_no_album" end
-        local album_body, aerr = khinsider_get(KHINSIDER_BASE .. album.href)
+        local album_url = KHINSIDER_BASE .. album.href
+        local album_body, aerr = khinsider_get(album_url, search_url)
         if not album_body then return nil, "khinsider_album_failed: " .. tostring(aerr) end
         tracks = khinsider_pick_tracks(album_body)
         if not tracks then return nil, "khinsider_no_tracks" end
@@ -912,7 +938,8 @@ local function khinsider_resolve(game_name, key, exclude_set, dl_base)
         if not is_excluded(exclude_set, title) then
             local mp3 = mem_cache.track_mp3[track.href]
             if not mp3 then
-                local track_body, terr = khinsider_get(KHINSIDER_BASE .. track.href)
+                local track_url = KHINSIDER_BASE .. track.href
+                local track_body, terr = khinsider_get(track_url, KHINSIDER_BASE .. album.href)
                 if track_body then
                     mp3 = track_body:match('href="(https://[^"]+%.mp3)"')
                     if mp3 then mem_cache.track_mp3[track.href] = mp3 end
@@ -921,7 +948,7 @@ local function khinsider_resolve(game_name, key, exclude_set, dl_base)
                 end
             end
             if mp3 then
-                local filename, dl_err = download_file(dl_base, "mp3", mp3, BROWSER_UA)
+                local filename, dl_err = download_file(dl_base, "mp3", mp3, BROWSER_UA, { ["referer"] = KHINSIDER_BASE .. track.href })
                 if filename then return { file = filename, title = title }, nil end
                 last_err = dl_err
             elseif last_err == "khinsider_no_tracks" then
@@ -977,12 +1004,12 @@ local function sc_api(path_and_query)
     return safe_decode(cap_body(resp.body)), nil
 end
 
-local function sc_resolve(game_name, key, exclude_set, dl_base)
-    dl_base = dl_base or key
-    local query = game_name .. (settings.search_suffix or "")
-    local data, err = sc_api("/search/tracks?q=" .. url_encode(query) .. "&limit=15")
+local SC_MIN_SCORE = 30
+local SC_MAX_TRIES = 5
+
+local function sc_collect_candidates(query, candidates, seen)
+    local data, err = sc_api("/search/tracks?q=" .. url_encode(query) .. "&limit=20")
     if not data or type(data.collection) ~= "table" then return nil, err or "sc_search_failed" end
-    local candidates = {}
     for _, t in ipairs(data.collection) do
         if type(t) == "table" then
             local prog = nil
@@ -992,19 +1019,40 @@ local function sc_resolve(game_name, key, exclude_set, dl_base)
                 if fmt.protocol == "progressive" and tr.url then prog = tr.url break end
             end
             if prog then
-                candidates[#candidates + 1] = {
-                    title = tostring(t.title or ""),
-                    seconds = math.floor((tonumber(t.duration) or 0) / 1000),
-                    stream_api = prog,
-                }
+                local title = tostring(t.title or "")
+                local dedup = norm_words(title)
+                if not seen[dedup] then
+                    seen[dedup] = true
+                    candidates[#candidates + 1] = {
+                        title = title,
+                        seconds = math.floor((tonumber(t.duration) or 0) / 1000),
+                        stream_api = prog,
+                        genre = tostring(t.genre or ""),
+                        plays = tonumber(t.playback_count) or 0,
+                    }
+                end
             end
         end
     end
-    if #candidates == 0 then return nil, "sc_no_results" end
+    return true
+end
+
+local function sc_resolve(game_name, key, exclude_set, dl_base)
+    dl_base = dl_base or key
+    if not http_available() then return nil, "http_module_missing" end
+    local queries = { game_name .. (settings.search_suffix or "") }
+    local alt = game_name .. " soundtrack"
+    if alt ~= queries[1] then queries[#queries + 1] = alt end
+    local candidates, seen, last_err = {}, {}, nil
+    for _, q in ipairs(queries) do
+        local ok, err = sc_collect_candidates(q, candidates, seen)
+        if not ok then last_err = err end
+    end
+    if #candidates == 0 then return nil, last_err or "sc_no_results" end
     order_candidates(candidates, game_name)
     local tried = 0
     for _, c in ipairs(candidates) do
-        if tried >= 3 then break end
+        if tried >= SC_MAX_TRIES or (c.score or 0) < SC_MIN_SCORE then break end
         if not is_excluded(exclude_set, c.title) then
             tried = tried + 1
             local sep = c.stream_api:find("?", 1, true) and "&" or "?"
@@ -1017,7 +1065,7 @@ local function sc_resolve(game_name, key, exclude_set, dl_base)
             end
         end
     end
-    return nil, "sc_download_failed"
+    return nil, "sc_no_good_match"
 end
 
 local resolve_busy = false
