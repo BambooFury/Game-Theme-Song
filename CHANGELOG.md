@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.0.1](https://github.com/BambooFury/Game-Theme-Song/compare/v2.0.0...v2.0.1) (2026-10-01)
+
+
+### Maintenance
+
+* build with node and starlight instead of bun ([b285e69](https://github.com/BambooFury/Game-Theme-Song/commit/b285e69c03f55ab8bc141e4a23a8465df9ed8795))
+* merge release 2.0.0 into next ([8f6602a](https://github.com/BambooFury/Game-Theme-Song/commit/8f6602a250981d1f226049289f69324128b91bbb))
+
 ## [2.0.0](https://github.com/BambooFury/Game-Theme-Song/compare/v1.6.4...v2.0.0) (2026-10-01)
 
 
