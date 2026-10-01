@@ -7,8 +7,8 @@
   "type": "module",
   "scripts": {
     "build:assets": "node scripts/build-assets.mjs",
-    "dev": "bun run build:assets && starlight watch",
-    "build": "bun run build:assets && starlight pack",
+    "dev": "node scripts/build-assets.mjs && starlight watch",
+    "build": "node scripts/build-assets.mjs && starlight pack",
     "prepare": "starlight lsp"
   },
   "devDependencies": {
