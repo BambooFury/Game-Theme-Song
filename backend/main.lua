@@ -573,6 +573,7 @@ local function score_candidate(c, game_name)
     local needle = norm_words(game_name):match("^%s*(.-)%s*$")
     if needle ~= "" and title:find(needle, 1, true) then
         score = score + 45
+        c.exact = true
     elseif words >= 2 and hits < words then
         score = score - math.floor(150 * (words - hits) / words)
     end
@@ -612,7 +613,12 @@ end
 
 local function order_candidates(candidates, game_name)
     for _, c in ipairs(candidates) do c.score = score_candidate(c, game_name) end
-    table.sort(candidates, function(a, b) return (a.score or 0) > (b.score or 0) end)
+    table.sort(candidates, function(a, b)
+        if (a.score or 0) ~= (b.score or 0) then return (a.score or 0) > (b.score or 0) end
+        if (a.exact or false) ~= (b.exact or false) then return (a.exact or false) end
+        if (a.plays or 0) ~= (b.plays or 0) then return (a.plays or 0) > (b.plays or 0) end
+        return (a.title or "") < (b.title or "")
+    end)
     return candidates
 end
 
@@ -906,7 +912,10 @@ local function khinsider_pick_tracks(body)
         end
     end
     if #tracks == 0 then return nil end
-    table.sort(tracks, function(a, b) return (a.score or 0) > (b.score or 0) end)
+    table.sort(tracks, function(a, b)
+        if (a.score or 0) ~= (b.score or 0) then return (a.score or 0) > (b.score or 0) end
+        return a.name < b.name
+    end)
     return tracks
 end
 
@@ -1008,7 +1017,7 @@ local SC_MIN_SCORE = 30
 local SC_MAX_TRIES = 5
 
 local function sc_collect_candidates(query, candidates, seen)
-    local data, err = sc_api("/search/tracks?q=" .. url_encode(query) .. "&limit=20")
+    local data, err = sc_api("/search/tracks?q=" .. url_encode(query) .. "&limit=25")
     if not data or type(data.collection) ~= "table" then return nil, err or "sc_search_failed" end
     for _, t in ipairs(data.collection) do
         if type(t) == "table" then
