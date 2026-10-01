@@ -1449,6 +1449,17 @@ end
     return result
 end
 
+local MUSIC_BUTTON_PATCH = {
+    find = [[\.AppButtonsContainer,children:\[\(0,(\w+)\.jsx\)\(\w+,\{\.\.\.this\.props\}\)]],
+    file = [[chunk~[0-9a-f]+\.js]],
+    transforms = {
+        {
+            match = [[\.AppButtonsContainer,children:\[\(0,(\w+)\.jsx\)]],
+            replace = [[.AppButtonsContainer,children:[(0,\1.jsx)(#{{self}}?.hookedMusicButton?.MusicButton||(()=>null),{}),(0,\1.jsx)]],
+        },
+    },
+}
+
 local function on_load()
     pcall(migrate_all_data)
     local prev_boot = tonumber(read_file(BOOT_MARKER) or "") or 0
@@ -1482,16 +1493,5 @@ local function on_unload()
     pcall(save_custom)
     pcall(save_ignored)
 end
-
-local MUSIC_BUTTON_PATCH = {
-    find = [[\.AppButtonsContainer,children:\[\(0,(\w+)\.jsx\)\(\w+,\{\.\.\.this\.props\}\)]],
-    file = [[chunk~[0-9a-f]+\.js]],
-    transforms = {
-        {
-            match = [[\.AppButtonsContainer,children:\[\(0,(\w+)\.jsx\)]],
-            replace = [[\.AppButtonsContainer,children:[(0,\1.jsx)(#{{self}}?.hookedMusicButton?.MusicButton||(()=>null),{}),(0,\1.jsx]],
-        },
-    },
-}
 
 return { on_load = on_load, on_unload = on_unload, patches = { MUSIC_BUTTON_PATCH } }
