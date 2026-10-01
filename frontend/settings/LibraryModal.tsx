@@ -198,7 +198,7 @@ export const LibraryModalContent: React.FC<LibraryModalProps> = ({ onChanged }) 
     const normalizedQuery = query.trim().toLocaleLowerCase();
     return filtered
       .filter((app) => !normalizedQuery || app.name.toLocaleLowerCase().includes(normalizedQuery))
-      .sort((a, b) => Number(Boolean(customMap[String(a.appid)])) - Number(Boolean(customMap[String(b.appid)])) || a.name.localeCompare(b.name));
+      .sort((a, b) => Number(Boolean(customMap[String(b.appid)])) - Number(Boolean(customMap[String(a.appid)])) || a.name.localeCompare(b.name));
   }, [apps, customMap, query, showAll]);
 
   const shown = visible.slice(0, MAX_CARDS);
