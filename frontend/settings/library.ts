@@ -70,13 +70,18 @@ try {
   return out;
 }
 
+function parseResult(raw: unknown): { ok: boolean; error?: string } {
+  const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+  return parsed ?? { ok: false, error: 'empty_response' };
+}
+
 export async function uploadCustomMusic(appid: number | string, gameName: string, fileName: string, data: string): Promise<{ ok: boolean; error?: string }> {
   const ext = (fileName.split('.').pop() ?? '').toLowerCase();
-  const begin = JSON.parse(await setCustomMusicBegin(appid));
+  const begin = parseResult(await setCustomMusicBegin(appid));
   if (!begin?.ok) return begin;
   for (let i = 0; i < data.length; i += UPLOAD_CHUNK) {
-    const r = JSON.parse(await setCustomMusicChunk(appid, data.slice(i, i + UPLOAD_CHUNK)));
+    const r = parseResult(await setCustomMusicChunk(appid, data.slice(i, i + UPLOAD_CHUNK)));
     if (!r?.ok) return r;
   }
-  return JSON.parse(await setCustomMusicFinish(appid, ext, utf8ToBase64(fileName), utf8ToBase64(gameName)));
+  return parseResult(await setCustomMusicFinish(appid, ext, utf8ToBase64(fileName), utf8ToBase64(gameName)));
 }

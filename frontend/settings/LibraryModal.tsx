@@ -156,7 +156,8 @@ export const LibraryModalContent: React.FC<LibraryModalProps> = ({ onChanged }) 
       void reapplyForApp(app.appid);
     } catch (e) {
       warn('set custom failed', e);
-      setError('Something went wrong while saving the file.');
+      const reason = e instanceof Error ? e.message : String(e);
+      setError(`Something went wrong while saving the file: ${reason}`);
     } finally {
       setBusyId(null);
     }
