@@ -35,7 +35,7 @@ Plays each game's <b>theme music</b> in the background when you open its page in
 </tr>
 <tr>
 <td><img src="https://api.iconify.design/lucide:sliders-horizontal.svg?color=%232ecc71" width="16"> <b>Volume Slider</b> - 0–100% with 1% precision, applied live while music plays</td>
-<td><img src="https://api.iconify.design/lucide:hand-metal.svg?color=%23ff4d4f" width="16"> <b>Welcome Tour</b> - friendly one-time native dialog after install</td>
+<td><img src="https://api.iconify.design/lucide:save.svg?color=%23FFD43B" width="16"> <b>Survives Reinstalls</b> - custom tracks live in a dedicated folder and are restored automatically after reinstalling the plugin</td>
 </tr>
 <tr>
 <td><img src="https://api.iconify.design/lucide:shuffle.svg?color=%2367c1f5" width="16"> <b>Manual Search</b> - skip to a different theme right from the Now Playing tab</td>
@@ -46,7 +46,7 @@ Plays each game's <b>theme music</b> in the background when you open its page in
 ## <img src="https://api.iconify.design/lucide:cog.svg?color=%231a9fff" width="20"> How It Works
 
 1. <img src="https://api.iconify.design/lucide:scan-eye.svg?color=%231a9fff" width="16"> You open a game page - the plugin detects the app and resolves the game's name
-2. <img src="https://api.iconify.design/lucide:radar.svg?color=%23FFD43B" width="16"> The backend searches the game's official soundtrack and picks the main theme track
+2. <img src="https://api.iconify.design/lucide:radar.svg?color=%23FFD43B" width="16"> The backend looks up the game's official soundtrack (Khinsider + SoundCloud), scores every candidate for a real match and only keeps high-quality picks
 3. <img src="https://api.iconify.design/lucide:hard-drive-download.svg?color=%232ecc71" width="16"> The track is downloaded once and cached locally for instant replays
 4. <img src="https://api.iconify.design/lucide:audio-lines.svg?color=%23ff4d4f" width="16"> Music fades in - switch games and it cross-fades, leave the page and it fades out
 
@@ -64,11 +64,12 @@ Plays each game's <b>theme music</b> in the background when you open its page in
 
 ## <img src="https://api.iconify.design/lucide:music.svg?color=%2367c1f5" width="20"> The Music Note Button
 
-On every game page in your Steam library, a small **music note button** appears. Click it to open the **Game Theme Song popup** — a native, movable and resizable Steam window with two tabs:
+On every game page in your Steam library, a small **music note button** appears. Click it to open the **Game Theme Song popup** — a native, movable and resizable Steam window with four tabs:
 
 ### Now Playing
 - Shows the current game name and the track that's playing (or "Searching…" while a theme is being found)
 - **Find another** - skip to a different theme track (available when manual search is on)
+- **Search again** - force a fresh search for games with no track yet
 - **Stop** - stop the current track with a fade-out
 - **Keep this song** - confirm a newly found track so it stays in the cache
 - Live playback progress bar with current time and duration
@@ -92,28 +93,30 @@ On every game page in your Steam library, a small **music note button** appears.
 
 ## <img src="https://api.iconify.design/lucide:file-music.svg?color=%2367c1f5" width="20"> Custom Music
 
-Prefer your own track for a game? Open the popup's Settings tab and use the **Custom game music** button:
+Prefer your own track for a game? Open the popup's **Custom Music** tab:
 
-1. <img src="https://api.iconify.design/lucide:library.svg?color=%231a9fff" width="16"> Click the music note button on any game page, then go to **Settings → Custom game music**
-2. <img src="https://api.iconify.design/lucide:search.svg?color=%23FFD43B" width="16"> Search for the game you want
+1. <img src="https://api.iconify.design/lucide:library.svg?color=%231a9fff" width="16"> Click the music note button on any game page, then open the **Custom Music** tab
+2. <img src="https://api.iconify.design/lucide:search.svg?color=%23FFD43B" width="16"> Search for the game you want - games with an assigned track are always listed on top
 3. <img src="https://api.iconify.design/lucide:upload.svg?color=%232ecc71" width="16"> Pick an audio file from your PC - it's saved and used instantly
 4. <img src="https://api.iconify.design/lucide:trash-2.svg?color=%23ff4d4f" width="16"> Your custom track always overrides the auto-theme; clear it anytime to fall back
 
 > Supported formats: **MP3, M4A, AAC, OGG, OPUS, WAV, FLAC** - up to 50 MB per file.
 
+> <img src="https://api.iconify.design/lucide:save.svg?color=%23FFD43B" width="14"> Custom tracks are stored in `<Steam>/millennium/game-theme-song-custom/` together with their game mapping. **This folder survives plugin removal** - reinstall the plugin and every custom track is automatically re-applied to its game, no need to pick the files again.
+
 ## <img src="https://api.iconify.design/lucide:circle-help.svg?color=%23FFD43B" width="20"> FAQ
 
 **Where does the music come from?**
-From the game's official soundtrack - the plugin looks it up automatically and picks the main theme.
+From the game's official soundtrack - the plugin looks it up on soundtrack sources, scores every result for a genuine match (full game-name match, soundtrack genre, track quality) and only downloads picks it is confident about.
 
-**Can I use my own music?**
-Yes - open the popup's Settings tab, click **Custom game music**, search for a game and choose any audio file (MP3, M4A, AAC, OGG, OPUS, WAV, FLAC, up to 50 MB). Your track is saved locally and always takes priority over the auto-theme.
+**What if a game has no official soundtrack online?**
+You'll see "no theme found" instead of a random song - just set your own custom track for a perfect match.
 
 **Does it play over my games?**
 No. Music only plays while you're browsing a game's page in the library and fades out when you leave it.
 
-**What if a game has no official soundtrack online?**
-The plugin picks the closest matching soundtrack it can find, so you still get fitting theme music for almost every game - or set your own custom track for a perfect match.
+**Will my custom tracks survive a reinstall?**
+Yes - custom tracks and their game mapping are kept in `<Steam>/millennium/game-theme-song-custom/`, which is not removed with the plugin. After reinstalling, the plugin detects the folder and instantly restores every track to its game.
 
 **Does it slow down Steam?**
 No - themes are cached after the first visit and playback is just a background audio element.
