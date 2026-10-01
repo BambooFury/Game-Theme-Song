@@ -10,6 +10,11 @@
 			"bump-patch-for-minor-pre-major": true,
 			"extra-files": [
 					{
+						"type": "toml",
+						"path": "millennium.toml",
+						"jsonpath": "$.plugin.version"
+					},
+					{
 						"type": "json",
 						"path": "plugin.json",
 						"jsonpath": "$.version"

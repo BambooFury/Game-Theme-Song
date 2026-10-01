@@ -1,25 +1,31 @@
-import { definePlugin, routerHook } from '@steambrew/client';
+import { definePlugin, routerHook } from 'millennium';
 import { loadSettingsOnce, startPolling, registerLaunchStop, unregisterLaunchStop, loadIgnoredOnce, startFocusWatch, stopFocusWatch } from './core/engine';
 import { SearchToast } from './core/SearchToast';
-import { SettingsContent } from './settings/SettingsContent';
+import { ManagerWindows } from './core/ManagerWindows';
+import { setupNowPlaying, removeNowPlaying } from './core/NowPlaying';
 import { scheduleWelcome } from './core/WelcomeModal';
+
+export { hookedMusicButton } from './core/MusicButtonHook';
 
 export default definePlugin(() => {
 	void loadSettingsOnce();
 	void loadIgnoredOnce();
 	routerHook.addGlobalComponent('GTSSearchToast', SearchToast);
+	routerHook.addGlobalComponent('GTSManagerWindows', ManagerWindows);
 	scheduleWelcome();
 	startPolling();
 	registerLaunchStop();
 	startFocusWatch();
+	setupNowPlaying();
 	return {
 		title: 'Game Theme Song',
 		icon: <></>,
-		content: <SettingsContent />,
 		onDismount() {
 			routerHook.removeGlobalComponent('GTSSearchToast');
+			routerHook.removeGlobalComponent('GTSManagerWindows');
 			unregisterLaunchStop();
 			stopFocusWatch();
+			removeNowPlaying();
 		},
 	};
 });

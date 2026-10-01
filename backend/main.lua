@@ -1,4 +1,4 @@
-﻿if type(jit) == "table" and type(jit.off) == "function" then
+if type(jit) == "table" and type(jit.off) == "function" then
     pcall(jit.off)
     pcall(jit.flush)
 end
@@ -17,7 +17,7 @@ local function resolve_plugin_dir()
     if source:sub(1, 1) == "@" then source = source:sub(2) end
     local dir = source:match("^(.+)[/\\]backend[/\\][^/\\]+$")
     if dir then return dir end
-    return millennium.steam_path() .. "/millennium/plugins/Game Theme Song"
+    return millennium.steam_path() .. "/millennium/plugins/Game Theme Song on Game Page"
 end
 
 local SEP = package.config:sub(1, 1)
@@ -37,13 +37,52 @@ local function join(...)
 end
 
 local PLUGIN_DIR = norm_path(resolve_plugin_dir())
-local CACHE_FILE = join(PLUGIN_DIR, "cache.json")
-local CONFIG_FILE = join(PLUGIN_DIR, "settings.json")
-local CUSTOM_FILE = join(PLUGIN_DIR, "custom.json")
-local IGNORE_FILE = join(PLUGIN_DIR, "ignored.json")
-local RESOLVE_MARKER = join(PLUGIN_DIR, "resolve.lock")
-local BOOT_MARKER = join(PLUGIN_DIR, "boot.lock")
+
+local function resolve_data_dir()
+    local install = millennium.get_install_path() or ""
+    install = install:gsub("/", SEP):gsub(SEP .. "+$", "")
+    return install .. SEP .. "plugins" .. SEP .. "game-theme-song-data"
+end
+
+local DATA_DIR = norm_path(resolve_data_dir())
+
+local function ensure_data_dir()
+    if not fs then return end
+    if fs.exists(DATA_DIR) then return end
+    pcall(fs.create_directories, DATA_DIR)
+end
+
+local function migrate_data_file(name)
+    local src = join(PLUGIN_DIR, name)
+    local dst = join(DATA_DIR, name)
+    if fs and fs.exists(dst) then return end
+    local f = io.open(src, "rb")
+    if not f then return end
+    local content = f:read("*a")
+    f:close()
+    if content and content ~= "" then
+        local out = io.open(dst, "wb")
+        if out then out:write(content); out:close() end
+    end
+end
+
+local function migrate_all_data()
+    ensure_data_dir()
+    migrate_data_file("settings.json")
+    migrate_data_file("cache.json")
+    migrate_data_file("custom.json")
+    migrate_data_file("ignored.json")
+end
+
+local CACHE_FILE = join(DATA_DIR, "cache.json")
+local CONFIG_FILE = join(DATA_DIR, "settings.json")
+local CUSTOM_FILE = join(DATA_DIR, "custom.json")
+local IGNORE_FILE = join(DATA_DIR, "ignored.json")
+local RESOLVE_MARKER = join(DATA_DIR, "resolve.lock")
+local BOOT_MARKER = join(DATA_DIR, "boot.lock")
 local AUDIO_DIR = join(norm_path(millennium.steam_path()), "steamui", "game_theme_song")
+local CUSTOM_BACKUP_DIR = norm_path(join(norm_path(millennium.steam_path()), "millennium", "game-theme-song-custom"))
+local CUSTOM_BACKUP_FILE = join(CUSTOM_BACKUP_DIR, "custom.json")
 local LOOPBACK_BASE = "https://steamloopback.host/game_theme_song/"
 local CONFIG_VERSION = 14
 
@@ -531,6 +570,20 @@ local function score_candidate(c, game_name)
         score = score + math.floor(60 * hits / words)
         if hits == words then score = score + 40 end
     end
+    local needle = norm_words(game_name):match("^%s*(.-)%s*$")
+    if needle ~= "" and title:find(needle, 1, true) then
+        score = score + 45
+    elseif words >= 2 and hits < words then
+        score = score - math.floor(150 * (words - hits) / words)
+    end
+    if c.genre and tostring(c.genre):lower():find("soundtrack", 1, true) then
+        score = score + 10
+    end
+    if (tonumber(c.plays) or 0) >= 50000 then
+        score = score + 10
+    elseif (tonumber(c.plays) or 0) >= 5000 then
+        score = score + 5
+    end
     local game_nums = {}
     for w in norm_words(game_name):gmatch("%S+") do
         if w:match("^%d+$") then game_nums[w] = true end
@@ -598,7 +651,7 @@ if sig4 == "\26\69\223\163" then return true end
     return false, head:gsub("%c", "."):sub(1, 16)
 end
 
-local function download_file(key, ext, url, ua)
+local function download_file(key, ext, url, ua, headers)
     if not fs or not http or not http.download then return nil, "download_unsupported" end
     pcall(fs.create_directories, AUDIO_DIR)
     local filename = key .. "." .. ext
@@ -606,7 +659,7 @@ local function download_file(key, ext, url, ua)
     for _, e in ipairs(AUDIO_EXTS) do
         if e ~= ext then pcall(fs.remove, join(AUDIO_DIR, key .. "." .. e)) end
     end
-    local result, err = http.download(url, path, { timeout = 180, user_agent = ua })
+    local result, err = http.download(url, path, { timeout = 180, user_agent = ua, headers = headers })
     if not result or not result.success or result.status ~= 200 or (result.bytes_written or 0) <= 0 then
         pcall(fs.remove, path)
         local detail = err or (result and ("status_" .. tostring(result.status))) or "unknown"
@@ -791,9 +844,19 @@ end
 
 local KHINSIDER_BASE = "https://downloads.khinsider.com"
 local BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+local KH_HEADERS = {
+    ["accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    ["accept-language"] = "en-US,en;q=0.9",
+    ["sec-fetch-mode"] = "navigate",
+    ["sec-fetch-site"] = "same-origin",
+    ["upgrade-insecure-requests"] = "1",
+}
 
-local function khinsider_get(url)
-    local resp, err = http.request(url, { method = "GET", timeout = 20, user_agent = BROWSER_UA })
+local function khinsider_get(url, referer)
+    local headers = {}
+    for k, v in pairs(KH_HEADERS) do headers[k] = v end
+    if referer then headers["referer"] = referer end
+    local resp, err = http.request(url, { method = "GET", timeout = 20, user_agent = BROWSER_UA, headers = headers })
     if resp and resp.status == 200 and resp.body then return cap_body(resp.body), nil end
     return nil, tostring(err or (resp and resp.status) or "no_response")
 end
@@ -852,16 +915,18 @@ local function khinsider_resolve(game_name, key, exclude_set, dl_base)
     if not http_available() then return nil, "http_module_missing" end
     local query = tostring(game_name):gsub("\226\132\162", ""):gsub("\194\174", ""):gsub("\194\169", "")
     local now = os.time()
+    local search_url = KHINSIDER_BASE .. "/search?search=" .. url_encode(query)
     local album, tracks
     local cached = mem_cache.khinsider[query]
     if cached and (now - cached.ts) < 180 then
         album, tracks = cached.album, cached.tracks
     else
-        local body, err = khinsider_get(KHINSIDER_BASE .. "/search?search=" .. url_encode(query))
+        local body, err = khinsider_get(search_url, KHINSIDER_BASE)
         if not body then return nil, "khinsider_search_failed: " .. tostring(err) end
         album = khinsider_pick_album(body, query)
         if not album then return nil, "khinsider_no_album" end
-        local album_body, aerr = khinsider_get(KHINSIDER_BASE .. album.href)
+        local album_url = KHINSIDER_BASE .. album.href
+        local album_body, aerr = khinsider_get(album_url, search_url)
         if not album_body then return nil, "khinsider_album_failed: " .. tostring(aerr) end
         tracks = khinsider_pick_tracks(album_body)
         if not tracks then return nil, "khinsider_no_tracks" end
@@ -873,7 +938,8 @@ local function khinsider_resolve(game_name, key, exclude_set, dl_base)
         if not is_excluded(exclude_set, title) then
             local mp3 = mem_cache.track_mp3[track.href]
             if not mp3 then
-                local track_body, terr = khinsider_get(KHINSIDER_BASE .. track.href)
+                local track_url = KHINSIDER_BASE .. track.href
+                local track_body, terr = khinsider_get(track_url, KHINSIDER_BASE .. album.href)
                 if track_body then
                     mp3 = track_body:match('href="(https://[^"]+%.mp3)"')
                     if mp3 then mem_cache.track_mp3[track.href] = mp3 end
@@ -882,7 +948,7 @@ local function khinsider_resolve(game_name, key, exclude_set, dl_base)
                 end
             end
             if mp3 then
-                local filename, dl_err = download_file(dl_base, "mp3", mp3, BROWSER_UA)
+                local filename, dl_err = download_file(dl_base, "mp3", mp3, BROWSER_UA, { ["referer"] = KHINSIDER_BASE .. track.href })
                 if filename then return { file = filename, title = title }, nil end
                 last_err = dl_err
             elseif last_err == "khinsider_no_tracks" then
@@ -938,12 +1004,12 @@ local function sc_api(path_and_query)
     return safe_decode(cap_body(resp.body)), nil
 end
 
-local function sc_resolve(game_name, key, exclude_set, dl_base)
-    dl_base = dl_base or key
-    local query = game_name .. (settings.search_suffix or "")
-    local data, err = sc_api("/search/tracks?q=" .. url_encode(query) .. "&limit=15")
+local SC_MIN_SCORE = 30
+local SC_MAX_TRIES = 5
+
+local function sc_collect_candidates(query, candidates, seen)
+    local data, err = sc_api("/search/tracks?q=" .. url_encode(query) .. "&limit=20")
     if not data or type(data.collection) ~= "table" then return nil, err or "sc_search_failed" end
-    local candidates = {}
     for _, t in ipairs(data.collection) do
         if type(t) == "table" then
             local prog = nil
@@ -953,19 +1019,40 @@ local function sc_resolve(game_name, key, exclude_set, dl_base)
                 if fmt.protocol == "progressive" and tr.url then prog = tr.url break end
             end
             if prog then
-                candidates[#candidates + 1] = {
-                    title = tostring(t.title or ""),
-                    seconds = math.floor((tonumber(t.duration) or 0) / 1000),
-                    stream_api = prog,
-                }
+                local title = tostring(t.title or "")
+                local dedup = norm_words(title)
+                if not seen[dedup] then
+                    seen[dedup] = true
+                    candidates[#candidates + 1] = {
+                        title = title,
+                        seconds = math.floor((tonumber(t.duration) or 0) / 1000),
+                        stream_api = prog,
+                        genre = tostring(t.genre or ""),
+                        plays = tonumber(t.playback_count) or 0,
+                    }
+                end
             end
         end
     end
-    if #candidates == 0 then return nil, "sc_no_results" end
+    return true
+end
+
+local function sc_resolve(game_name, key, exclude_set, dl_base)
+    dl_base = dl_base or key
+    if not http_available() then return nil, "http_module_missing" end
+    local queries = { game_name .. (settings.search_suffix or "") }
+    local alt = game_name .. " soundtrack"
+    if alt ~= queries[1] then queries[#queries + 1] = alt end
+    local candidates, seen, last_err = {}, {}, nil
+    for _, q in ipairs(queries) do
+        local ok, err = sc_collect_candidates(q, candidates, seen)
+        if not ok then last_err = err end
+    end
+    if #candidates == 0 then return nil, last_err or "sc_no_results" end
     order_candidates(candidates, game_name)
     local tried = 0
     for _, c in ipairs(candidates) do
-        if tried >= 3 then break end
+        if tried >= SC_MAX_TRIES or (c.score or 0) < SC_MIN_SCORE then break end
         if not is_excluded(exclude_set, c.title) then
             tried = tried + 1
             local sep = c.stream_api:find("?", 1, true) and "&" or "?"
@@ -978,7 +1065,7 @@ local function sc_resolve(game_name, key, exclude_set, dl_base)
             end
         end
     end
-    return nil, "sc_download_failed"
+    return nil, "sc_no_good_match"
 end
 
 local resolve_busy = false
@@ -1094,14 +1181,31 @@ return json.encode({ ok = false, error = err_code })
     return result
 end
 
-function get_theme_audio(app_id, force_refresh, game_name)
+---@ffi
+---Resolve the theme song for a game, downloading it if needed.
+---@param app_id number Steam app id
+---@param game_name string Display name of the game
+---@param force_refresh boolean Bypass the on-disk cache
+---@return string JSON { ok, url, title, cached, custom }
+function get_theme_audio(app_id, game_name, force_refresh)
     return resolve_theme(app_id, force_refresh, game_name, nil)
 end
 
-function reroll_theme(app_id, exclude, force_refresh, game_name)
+---@ffi
+---Resolve a different theme song, skipping the excluded titles.
+---@param app_id number Steam app id
+---@param game_name string Display name of the game
+---@param force_refresh boolean Bypass the on-disk cache
+---@param exclude string JSON array of titles to skip
+---@return string JSON { ok, url, title, cached, custom }
+function reroll_theme(app_id, game_name, force_refresh, exclude)
     return resolve_theme(app_id, force_refresh, game_name, exclude)
 end
 
+---@ffi
+---Delete any downloaded theme audio for a game.
+---@param app_id number Steam app id
+---@return string JSON { ok }
 function invalidate_audio(app_id)
     local key = tostring(app_id)
     if fs and fs.remove then
@@ -1127,6 +1231,9 @@ local function custom_ext(filename)
     return CUSTOM_EXTS[ext:lower()]
 end
 
+---@ffi
+---List games that have a custom music file set.
+---@return string JSON { ok, items }
 function get_custom_list()
   return run_io("get_custom_list", function()
     if custom_list_cache then return custom_list_cache end
@@ -1142,10 +1249,18 @@ function get_custom_list()
     return custom_list_cache
   end)
 end
+---@ffi
+---List games whose auto-search is muted.
+---@return string JSON { ok, items }
 function get_ignored_list()
     return json.encode({ ok = true, items = ignored })
 end
 
+---@ffi
+---Mute or unmute auto-search for a game.
+---@param app_id number Steam app id
+---@param value boolean true to mute
+---@return string JSON { ok }
 function set_ignored(app_id, value)
     local key = tostring(app_id)
     if key == "" or key == "nil" then return json.encode({ ok = false, error = "missing_app_id" }) end
@@ -1155,6 +1270,61 @@ function set_ignored(app_id, value)
 end
 
 local upload_sessions = {}
+
+local function copy_file(src, dst)
+    local f = io.open(src, "rb")
+    if not f then return false end
+    local data = f:read("*a")
+    f:close()
+    if not data then return false end
+    return write_file(dst, data)
+end
+
+local function sync_custom_backup()
+    if not fs then return end
+    pcall(fs.create_directories, CUSTOM_BACKUP_DIR)
+    local s = safe_encode(custom)
+    if s then write_file_atomic(CUSTOM_BACKUP_FILE, s) end
+    for _, entry in pairs(custom) do
+        if type(entry) == "table" and entry.file then
+            local src = join(AUDIO_DIR, entry.file)
+            local dst = join(CUSTOM_BACKUP_DIR, entry.file)
+            if fs.exists and fs.exists(src) and not fs.exists(dst) then copy_file(src, dst) end
+        end
+    end
+end
+
+local function restore_custom_backup()
+    if not fs then return end
+    pcall(fs.create_directories, AUDIO_DIR)
+    if fs.exists and fs.exists(CUSTOM_BACKUP_FILE) then
+        local backup = scrub_state(safe_decode(read_file(CUSTOM_BACKUP_FILE)) or {})
+        local changed = false
+        for key, entry in pairs(backup) do
+            if type(entry) == "table" and type(entry.file) == "string" and entry.file ~= "" then
+                local src = join(CUSTOM_BACKUP_DIR, entry.file)
+                if fs.exists(src) then
+                    local dst = join(AUDIO_DIR, entry.file)
+                    if not fs.exists(dst) then copy_file(src, dst) end
+                    if not custom[key] then
+                        custom[key] = {
+                            file = entry.file,
+                            title = sanitize_text(tostring(entry.title or "")),
+                            name = sanitize_text(tostring(entry.name or "")),
+                            ts = tonumber(entry.ts) or os.time(),
+                        }
+                        changed = true
+                    end
+                end
+            end
+        end
+        if changed then
+            save_custom()
+            custom_list_cache = nil
+        end
+    end
+    sync_custom_backup()
+end
 
 local function store_custom(app_id, game_name, filename, title, data, ext_hint, title_b64, name_b64)
     if not (fs and fs.create_directories) then return json.encode({ ok = false, error = "fs_unsupported" }) end
@@ -1175,17 +1345,22 @@ local function store_custom(app_id, game_name, filename, title, data, ext_hint, 
     local fname = "custom_" .. key .. "." .. ext
     for e in pairs(CUSTOM_EXTS) do pcall(fs.remove, join(AUDIO_DIR, "custom_" .. key .. "." .. e)) end
     if not write_file(join(AUDIO_DIR, fname), bytes) then return json.encode({ ok = false, error = "write_failed" }) end
-    local clean_title = sanitize_text(tostring(resolved_title or ""):gsub("%.[%w]+$", ""))
+    local clean_title = sanitize_text((tostring(resolved_title or ""):gsub("%.[%w]+$", "")))
     if clean_title == "" then clean_title = "Custom track" end
     resolved_name = sanitize_text(resolved_name or "")
     local ts = os.time()
     custom[key] = { file = fname, title = clean_title, name = resolved_name or "", ts = ts }
     save_custom()
+    sync_custom_backup()
     custom_list_cache = nil
     local url = LOOPBACK_BASE .. fname .. "?v=" .. tostring(ts)
     return json.encode({ ok = true, url = url })
 end
 
+---@ffi
+---Start a chunked custom music upload for a game.
+---@param app_id number Steam app id
+---@return string JSON { ok }
 function set_custom_music_begin(app_id)
     local key = tostring(app_id)
     if key == "" or key == "nil" then return json.encode({ ok = false, error = "missing_app_id" }) end
@@ -1193,6 +1368,11 @@ function set_custom_music_begin(app_id)
     return json.encode({ ok = true })
 end
 
+---@ffi
+---Append a base64 chunk to an in-flight upload.
+---@param app_id number Steam app id
+---@param chunk string base64 fragment
+---@return string JSON { ok }
 function set_custom_music_chunk(app_id, chunk)
     local key = tostring(app_id)
     local s = upload_sessions[key]
@@ -1204,7 +1384,14 @@ function set_custom_music_chunk(app_id, chunk)
     return json.encode({ ok = true })
 end
 
-function set_custom_music_finish(app_id, ext, name_b64, title_b64)
+---@ffi
+---Finish a chunked custom music upload and store the file.
+---@param app_id number Steam app id
+---@param ext string normalized audio extension
+---@param title_b64 string base64 track title
+---@param name_b64 string base64 game name
+---@return string JSON { ok, url }
+function set_custom_music_finish(app_id, ext, title_b64, name_b64)
     local ok, result = pcall(function()
         local key = tostring(app_id)
         local s = upload_sessions[key]
@@ -1219,27 +1406,43 @@ function set_custom_music_finish(app_id, ext, name_b64, title_b64)
     return result
 end
 
+---@ffi
+---Remove the custom music file for a game.
+---@param app_id number Steam app id
+---@return string JSON { ok }
 function clear_custom_music(app_id)
     local ok, result = pcall(function()
         local key = tostring(app_id)
         if fs and fs.remove then
-            for e in pairs(CUSTOM_EXTS) do pcall(fs.remove, join(AUDIO_DIR, "custom_" .. key .. "." .. e)) end
+            for e in pairs(CUSTOM_EXTS) do
+                pcall(fs.remove, join(AUDIO_DIR, "custom_" .. key .. "." .. e))
+                pcall(fs.remove, join(CUSTOM_BACKUP_DIR, "custom_" .. key .. "." .. e))
+            end
         end
-custom[key] = nil
-save_custom()
-    custom_list_cache = nil
+        custom[key] = nil
+        save_custom()
+        sync_custom_backup()
+        custom_list_cache = nil
         return json.encode({ ok = true })
     end)
     if not ok then logger:warn("clear_custom_music crashed: " .. tostring(result)); return json.encode({ ok = false, error = "internal_error" }) end
     return result
 end
 
+---@ffi
+---Return the current plugin settings.
+---@return string JSON settings table
 function get_settings()
     local fresh = safe_decode(read_file(CONFIG_FILE))
     if type(fresh) == "table" then settings = merge_defaults(fresh, DEFAULT_SETTINGS) end
     return json.encode(settings)
 end
 
+---@ffi
+---Persist one settings key.
+---@param key string settings key
+---@param value string|number|boolean value to store
+---@return string JSON { ok }
 function set_setting(key, value)
     if DEFAULT_SETTINGS[key] == nil then return json.encode({ ok = false, error = "unknown_key" }) end
     settings[key] = value
@@ -1268,6 +1471,9 @@ local function audio_dir_sizes()
     return sizes
 end
 
+---@ffi
+---Return downloaded track count and total size.
+---@return string JSON { ok, count, bytes }
 function get_cache_info()
     return run_io("get_cache_info", function()
         local sizes = audio_dir_sizes()
@@ -1282,6 +1488,9 @@ function get_cache_info()
     end)
 end
 
+---@ffi
+---Delete every downloaded theme track.
+---@return string JSON { ok, removed }
 function clear_audio_cache()
     local ok, result = pcall(function()
         local removed = 0
@@ -1306,6 +1515,9 @@ end
     return result
 end
 
+---@ffi
+---List downloaded theme tracks.
+---@return string JSON { ok, items }
 function get_cache_list()
     return run_io("get_cache_list", function()
         local sizes = audio_dir_sizes()
@@ -1321,6 +1533,10 @@ function get_cache_list()
     end)
 end
 
+---@ffi
+---Delete the downloaded theme track for one game.
+---@param app_id number Steam app id
+---@return string JSON { ok, bytes }
 function clear_cache_for(app_id)
     local ok, result = pcall(function()
         local key = tostring(app_id)
@@ -1343,7 +1559,19 @@ end
     return result
 end
 
+local MUSIC_BUTTON_PATCH = {
+    find = [[\.AppButtonsContainer,children:\[\(0,(\w+)\.jsx\)\(\w+,\{\.\.\.this\.props\}\)]],
+    file = [[chunk~[0-9a-f]+\.js]],
+    transforms = {
+        {
+            match = [[\.AppButtonsContainer,children:\[\(0,(\w+)\.jsx\)]],
+            replace = [[.AppButtonsContainer,children:[(0,\1.jsx)(#{{self}}?.hookedMusicButton?.MusicButton||(()=>null),{}),(0,\1.jsx)]],
+        },
+    },
+}
+
 local function on_load()
+    pcall(migrate_all_data)
     local prev_boot = tonumber(read_file(BOOT_MARKER) or "") or 0
     if prev_boot >= 1 then
         pcall(os.remove, CACHE_FILE)
@@ -1356,6 +1584,7 @@ local function on_load()
     end
     write_file(BOOT_MARKER, tostring(prev_boot + 1))
     load_state()
+    restore_custom_backup()
     local prev = read_file(RESOLVE_MARKER)
     if prev and prev ~= "" then
         cache[prev] = nil
@@ -1376,4 +1605,4 @@ local function on_unload()
     pcall(save_ignored)
 end
 
-return { on_load = on_load, on_unload = on_unload }
+return { on_load = on_load, on_unload = on_unload, patches = { MUSIC_BUTTON_PATCH } }

@@ -1,8 +1,13 @@
 {
-	"$schema": "https://raw.githubusercontent.com/SteamClientHomebrew/Millennium/main/src/sys/plugin-schema.json",
-	"name": "game-theme-song",
-	"common_name": "Game Theme Song",
-	"description": "Plays the game's theme music in the background when you open a game page in your Steam library.",
-	"version": "1.6.4",
-	"backendType": "lua"
+  "$schema": "https://raw.githubusercontent.com/SteamClientHomebrew/Millennium/main/src/system/plugin-schema.json",
+  "name": "game-theme-song",
+  "common_name": "Game Theme Song",
+  "description": "Plays the game's theme music in the background when you open a game page in your Steam library.",
+  "version": "2.0.0",
+  "backendType": "lua",
+  "useBackend": true,
+  "include": [
+    "LICENSE",
+    ".github/preview.png"
+  ]
 }

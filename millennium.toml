@@ -1,0 +1,20 @@
+[plugin]
+id = "com.bamboofury.game-theme-song"
+name = "Game Theme Song"
+version = "2.0.0"
+author = "BambooFury"
+description = "Plays the game's theme music in the background when you open a game page in your Steam library."
+
+[backend]
+entry = "backend/main.lua"
+sources = ["backend/**/*.lua"]
+
+[frontend]
+entry = "frontend/index.tsx"
+
+[compiler]
+output_path = "auto"
+
+[dev]
+auto_restart = true
+reload_steamui_when = "both"

@@ -1,6 +1,15 @@
 export type Primitive = string | number | boolean;
 export type NoArgs = [];
 
+export type PlaybackMode = 'off' | 'searching' | 'ready';
+
+export interface ContextState {
+  mode: PlaybackMode;
+  title: string | null;
+  gameName: string | null;
+  appId: number | null;
+}
+
 export interface Settings {
   enabled: boolean;
   volume: number;
