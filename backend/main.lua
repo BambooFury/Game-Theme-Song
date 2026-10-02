@@ -97,6 +97,9 @@ local DEFAULT_SETTINGS = {
     stop_on_launch = true,
     manual_search = true,
     confirm_before_download = true,
+    fallback_file = "",
+    fallback_title = "",
+    fallback_ts = 0,
 }
 
 local cache = {}
@@ -573,6 +576,11 @@ local function score_candidate(c, game_name)
     local needle = norm_words(game_name):match("^%s*(.-)%s*$")
     if needle ~= "" and title:find(needle, 1, true) then
         score = score + 45
+        c.exact = true
+        if title:sub(2, #needle + 1) == needle then
+            score = score + 25
+            c.start = true
+        end
     elseif words >= 2 and hits < words then
         score = score - math.floor(150 * (words - hits) / words)
     end
@@ -595,6 +603,7 @@ local function score_candidate(c, game_name)
     for _, g in ipairs(GOOD_WORDS) do
         if title:find(" " .. g[1] .. " ", 1, true) then
             score = score + g[2]
+            c.theme = true
             break
         end
     end
@@ -612,7 +621,12 @@ end
 
 local function order_candidates(candidates, game_name)
     for _, c in ipairs(candidates) do c.score = score_candidate(c, game_name) end
-    table.sort(candidates, function(a, b) return (a.score or 0) > (b.score or 0) end)
+    table.sort(candidates, function(a, b)
+        if (a.score or 0) ~= (b.score or 0) then return (a.score or 0) > (b.score or 0) end
+        if (a.exact or false) ~= (b.exact or false) then return (a.exact or false) end
+        if (a.plays or 0) ~= (b.plays or 0) then return (a.plays or 0) > (b.plays or 0) end
+        return (a.title or "") < (b.title or "")
+    end)
     return candidates
 end
 
@@ -773,7 +787,7 @@ local function score_local_file(rel)
     return score
 end
 
-local mem_cache = { soundtrack = {}, khinsider = {}, track_mp3 = {} }
+local mem_cache = { soundtrack = {}, khinsider = {}, track_mp3 = {}, ia = {} }
 
 local function pick_soundtrack_track(game_name)
     local target = norm_words(clean_game_name(game_name)):gsub("^%s+", ""):gsub("%s+$", "")
@@ -906,7 +920,10 @@ local function khinsider_pick_tracks(body)
         end
     end
     if #tracks == 0 then return nil end
-    table.sort(tracks, function(a, b) return (a.score or 0) > (b.score or 0) end)
+    table.sort(tracks, function(a, b)
+        if (a.score or 0) ~= (b.score or 0) then return (a.score or 0) > (b.score or 0) end
+        return a.name < b.name
+    end)
     return tracks
 end
 
@@ -962,6 +979,112 @@ end
 local SC_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 local sc_client_id = nil
 
+local IA_SEARCH = "https://archive.org/advancedsearch.php"
+local IA_DL = "https://archive.org/download/"
+
+local function ia_pick_item(docs, game_name)
+    local target = norm_words(game_name)
+    local best, best_score = nil, 0
+    for _, d in ipairs(docs) do
+        local t = norm_words(tostring(d.title or ""))
+        local score = 0
+        if t == target then
+            score = 1000
+        elseif t:find(target, 1, true) then
+            score = 600
+        else
+            local words, hits = 0, 0
+            for w in target:gmatch("%S+") do
+                words = words + 1
+                if t:find(" " .. w .. " ", 1, true) then hits = hits + 1 end
+            end
+            if words > 0 and hits == words then score = 300 end
+        end
+        if score > best_score then
+            best, best_score = d, score
+        end
+    end
+    return best
+end
+
+local function ia_pick_track(files, album_title)
+    local tracks = {}
+    for _, f in ipairs(files) do
+        local n = tostring(f.name or "")
+        if n:lower():match("%.mp3$") then
+            local title = tostring(f.title or n:match("([^/]+)%.mp3$") or n)
+            local lower = " " .. title:lower() .. " "
+            local score = 0
+            if lower:find("main theme", 1, true) then score = 50
+            elseif lower:find("theme", 1, true) then score = 40
+            elseif lower:find("main menu", 1, true) then score = 35
+            elseif lower:find("title", 1, true) then score = 25
+            elseif lower:find("menu", 1, true) then score = 20 end
+            local len = tonumber(tostring(f.length or ""):match("^%d+")) or 0
+            if len >= 60 and len <= 600 then score = score + 15 end
+            local track_no = tonumber(tostring(f.track or "")) or 999
+            score = score - math.min(track_no, 20)
+            tracks[#tracks + 1] = { f = f, title = title, score = score }
+        end
+    end
+    if #tracks == 0 then return nil end
+    table.sort(tracks, function(a, b)
+        if (a.score or 0) ~= (b.score or 0) then return (a.score or 0) > (b.score or 0) end
+        return (a.f.name or "") < (b.f.name or "")
+    end)
+    local picked = tracks[1]
+    return { file = picked.f, title = picked.title .. " (" .. tostring(album_title or "Internet Archive") .. ")" }
+end
+
+local function ia_resolve(game_name, key, exclude_set, dl_base)
+    dl_base = dl_base or key
+    if not http_available() then return nil, "http_module_missing" end
+    local now = os.time()
+    local cached = mem_cache.ia[game_name]
+    if cached and (now - cached.ts) < 180 then
+        if not cached.picked then return nil, cached.err end
+        if is_excluded(exclude_set, cached.picked.title) then return nil, "ia_excluded" end
+        local escaped = url_encode(cached.picked.file.name):gsub("%%2F", "/")
+        local dl_url = IA_DL .. cached.identifier .. "/" .. escaped
+        local filename, dl_err = download_file(dl_base, "mp3", dl_url, BROWSER_UA)
+        if filename then return { file = filename, title = cached.picked.title }, nil end
+        return nil, "ia_download_failed: " .. tostring(dl_err)
+    end
+    local clean = tostring(game_name):gsub("\226\132\162", ""):gsub("\194\174", ""):gsub("\194\169", "")
+    local query = url_encode('title:("' .. clean .. '") AND mediatype:audio')
+    local url = IA_SEARCH .. "?q=" .. query .. "&fl%5B%5D=identifier&fl%5B%5D=title&rows=10&page=1&output=json"
+    local resp = http.request(url, { timeout = 20, user_agent = BROWSER_UA })
+    if not resp or resp.status ~= 200 or not resp.body then return nil, "ia_search_failed_" .. tostring(resp and resp.status) end
+    local data = safe_decode(cap_body(resp.body))
+    if type(data) ~= "table" or type(data.response) ~= "table" or type(data.response.docs) ~= "table" or #data.response.docs == 0 then
+        return nil, "ia_no_items"
+    end
+    local item = ia_pick_item(data.response.docs, clean)
+    if not item then return nil, "ia_no_match" end
+    local meta_resp = http.request(IA_DL .. item.identifier .. "/metadata.json", { timeout = 20, user_agent = BROWSER_UA })
+    if not meta_resp or meta_resp.status ~= 200 or not meta_resp.body then
+        mem_cache.ia[game_name] = { ts = now, err = "ia_meta_failed" }
+        return nil, "ia_meta_failed"
+    end
+    local meta = safe_decode(cap_body(meta_resp.body))
+    if type(meta) ~= "table" or type(meta.files) ~= "table" then
+        mem_cache.ia[game_name] = { ts = now, err = "ia_no_files" }
+        return nil, "ia_no_files"
+    end
+    local picked = ia_pick_track(meta.files, meta.title or item.title)
+    if not picked then
+        mem_cache.ia[game_name] = { ts = now, err = "ia_no_tracks" }
+        return nil, "ia_no_tracks"
+    end
+    mem_cache.ia[game_name] = { ts = now, picked = picked, identifier = item.identifier }
+    if is_excluded(exclude_set, picked.title) then return nil, "ia_excluded" end
+    local escaped = url_encode(picked.file.name):gsub("%%2F", "/")
+    local dl_url = IA_DL .. item.identifier .. "/" .. escaped
+    local filename, dl_err = download_file(dl_base, "mp3", dl_url, BROWSER_UA)
+    if filename then return { file = filename, title = picked.title }, nil end
+    return nil, "ia_download_failed: " .. tostring(dl_err)
+end
+
 local function sc_fetch_client_id()
     local resp = http.request("https://soundcloud.com/", { user_agent = SC_UA })
     if not resp or resp.status ~= 200 or not resp.body then return nil, "sc_home_failed" end
@@ -1008,7 +1131,7 @@ local SC_MIN_SCORE = 30
 local SC_MAX_TRIES = 5
 
 local function sc_collect_candidates(query, candidates, seen)
-    local data, err = sc_api("/search/tracks?q=" .. url_encode(query) .. "&limit=20")
+    local data, err = sc_api("/search/tracks?q=" .. url_encode(query) .. "&limit=25")
     if not data or type(data.collection) ~= "table" then return nil, err or "sc_search_failed" end
     for _, t in ipairs(data.collection) do
         if type(t) == "table" then
@@ -1053,6 +1176,7 @@ local function sc_resolve(game_name, key, exclude_set, dl_base)
     local tried = 0
     for _, c in ipairs(candidates) do
         if tried >= SC_MAX_TRIES or (c.score or 0) < SC_MIN_SCORE then break end
+        if not (c.exact and (c.start or c.theme)) then break end
         if not is_excluded(exclude_set, c.title) then
             tried = tried + 1
             local sep = c.stream_api:find("?", 1, true) and "&" or "?"
@@ -1071,6 +1195,20 @@ end
 local resolve_busy = false
 local io_busy = false
 local custom_list_cache = nil
+
+local function try_fallback()
+    local f = settings.fallback_file
+    if type(f) ~= "string" or f == "" then return nil end
+    if not (fs and fs.exists and fs.exists(join(AUDIO_DIR, f))) then return nil end
+    local ts = tonumber(settings.fallback_ts) or 0
+    return json.encode({
+        ok = true,
+        url = LOOPBACK_BASE .. f .. "?v=" .. tostring(ts),
+        title = sanitize_text(tostring(settings.fallback_title or "")),
+        cached = true,
+        fallback = true,
+    })
+end
 
 local function run_io(name, fn)
   if io_busy or resolve_busy then return json.encode({ ok = false, error = "busy" }) end
@@ -1121,6 +1259,8 @@ end
         local NOT_FOUND_TTL = 6 * 3600
     if not force_refresh and not rerolling and entry and entry.not_found then
     if (os.time() - (entry.ts or 0)) < NOT_FOUND_TTL then
+        local fb = try_fallback()
+        if fb then return fb end
         return json.encode({ ok = false, error = "not_found_cached" })
     end
     cache[key] = nil
@@ -1148,6 +1288,10 @@ end
                 if r and r.file then break end
             end
         end
+        local ia_err
+        if not (r and r.file) then
+            r, ia_err = ia_resolve(game_name, key, exclude_set, dl_base)
+        end
         if not (r and r.file) then
             local sc_err
             for _, q in ipairs(variants) do
@@ -1162,6 +1306,8 @@ if not rerolling then
     cache[key] = { not_found = true, ts = os.time() }
     save_cache()
 end
+local fb = try_fallback()
+if fb then return fb end
 return json.encode({ ok = false, error = err_code })
             end
         end
@@ -1428,6 +1574,81 @@ function clear_custom_music(app_id)
     if not ok then logger:warn("clear_custom_music crashed: " .. tostring(result)); return json.encode({ ok = false, error = "internal_error" }) end
     return result
 end
+
+local FALLBACK_FILE = "fallback.mp3"
+
+---@ffi
+---Start a chunked default-song upload.
+---@return string JSON { ok }
+function set_fallback_begin()
+    upload_sessions["__fallback__"] = { parts = {}, bytes = 0 }
+    return json.encode({ ok = true })
+end
+
+---@ffi
+---Append a base64 chunk to the default-song upload.
+---@param chunk string base64 fragment
+---@return string JSON { ok }
+function set_fallback_chunk(chunk)
+    local s = upload_sessions["__fallback__"]
+    if not s then return json.encode({ ok = false, error = "no_session" }) end
+    local part = tostring(chunk or "")
+    s.bytes = s.bytes + #part
+    if s.bytes > 80 * 1024 * 1024 then upload_sessions["__fallback__"] = nil; return json.encode({ ok = false, error = "file_too_large" }) end
+    s.parts[#s.parts + 1] = part
+    return json.encode({ ok = true })
+end
+
+---@ffi
+---Finish the default-song upload and store it.
+---@param title_b64 string base64 track title
+---@return string JSON { ok, title }
+function set_fallback_finish(title_b64)
+    local ok, result = pcall(function()
+        local s = upload_sessions["__fallback__"]
+        if not s then return json.encode({ ok = false, error = "no_session" }) end
+        local data = table.concat(s.parts)
+        upload_sessions["__fallback__"] = nil
+        local bytes = base64_decode(data)
+        if #bytes < 1024 then return json.encode({ ok = false, error = "file_too_small" }) end
+        if #bytes > 50 * 1024 * 1024 then return json.encode({ ok = false, error = "file_too_large" }) end
+        pcall(fs.create_directories, AUDIO_DIR)
+        if not write_file(join(AUDIO_DIR, FALLBACK_FILE), bytes) then return json.encode({ ok = false, error = "write_failed" }) end
+        pcall(fs.create_directories, CUSTOM_BACKUP_DIR)
+        copy_file(join(AUDIO_DIR, FALLBACK_FILE), join(CUSTOM_BACKUP_DIR, FALLBACK_FILE))
+        local title = sanitize_text(base64_decode(tostring(title_b64 or "")))
+        if title == "" then title = "Default song" end
+        settings.fallback_file = FALLBACK_FILE
+        settings.fallback_title = title
+        settings.fallback_ts = os.time()
+        save_settings()
+        return json.encode({ ok = true, title = title })
+    end)
+    collectgarbage("collect")
+    collectgarbage("collect")
+    if not ok then logger:warn("set_fallback_finish crashed: " .. tostring(result)); return json.encode({ ok = false, error = "internal_error" }) end
+    return result
+end
+
+---@ffi
+---Remove the default song.
+---@return string JSON { ok }
+function clear_fallback_music()
+    local ok, result = pcall(function()
+        if fs and fs.remove then
+            pcall(fs.remove, join(AUDIO_DIR, FALLBACK_FILE))
+            pcall(fs.remove, join(CUSTOM_BACKUP_DIR, FALLBACK_FILE))
+        end
+        settings.fallback_file = ""
+        settings.fallback_title = ""
+        settings.fallback_ts = 0
+        save_settings()
+        return json.encode({ ok = true })
+    end)
+    if not ok then logger:warn("clear_fallback_music crashed: " .. tostring(result)); return json.encode({ ok = false, error = "internal_error" }) end
+    return result
+end
+
 
 ---@ffi
 ---Return the current plugin settings.

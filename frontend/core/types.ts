@@ -20,6 +20,9 @@ export interface Settings {
   stop_on_launch: boolean;
   manual_search: boolean;
   confirm_before_download: boolean;
+  fallback_file: string;
+  fallback_title: string;
+  fallback_ts: number;
 }
 
 export interface CacheInfo {

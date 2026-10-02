@@ -1,6 +1,6 @@
 import { warn } from '../core/log';
 import { utf8ToBase64 } from '../core/base64';
-import { setCustomMusicBegin, setCustomMusicChunk, setCustomMusicFinish } from '../core/api';
+import { setCustomMusicBegin, setCustomMusicChunk, setCustomMusicFinish, setFallbackBegin, setFallbackChunk, setFallbackFinish } from '../core/api';
 import type { LibApp, CustomMap } from '../core/types';
 
 
@@ -17,6 +17,21 @@ export function decodeCustomItems(items: Record<string, { title?: string; name?:
     out[k] = { title: it.title ?? '', name: it.name ?? '' };
   }
   return out;
+}
+
+export async function uploadFallbackMusic(fileName: string, data: string): Promise<{ ok: boolean; error?: string }> {
+  const parse = (raw: unknown): { ok: boolean; error?: string } => {
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    return parsed ?? { ok: false, error: 'empty_response' };
+  };
+  const begin = parse(await setFallbackBegin());
+  if (!begin?.ok) return begin;
+  for (let i = 0; i < data.length; i += UPLOAD_CHUNK) {
+    const r = parse(await setFallbackChunk(data.slice(i, i + UPLOAD_CHUNK)));
+    if (!r?.ok) return r;
+  }
+  const title = utf8ToBase64(fileName.replace(/\.[^.]+$/, ''));
+  return parse(await setFallbackFinish(title));
 }
 
 function resolveCover(ov: any): string | undefined {

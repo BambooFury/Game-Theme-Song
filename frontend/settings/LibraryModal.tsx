@@ -4,7 +4,7 @@ import { MdCloudOff, MdDeleteOutline, MdHourglassEmpty, MdSearchOff, MdSportsEsp
 import { warn } from '../core/log';
 import { readFileBase64 } from '../core/base64';
 import { clearCustomMusic, getCustomList, getIgnoredList } from '../core/api';
-import { reapplyForApp, setAppIgnored } from '../core/engine';
+import { reapplyForApp, setAppIgnored, getCurrentAppId, subscribeContext } from '../core/engine';
 import type { CustomMap, LibApp } from '../core/types';
 import { ACCEPT_EXTS, MAX_CARDS, MAX_UPLOAD_BYTES, decodeCustomItems, getLibraryApps, uploadCustomMusic } from './library';
 
@@ -32,17 +32,19 @@ interface GameRowProps {
   customTitle?: string;
   busy: boolean;
   ignored: boolean;
+  current: boolean;
   onSet: (app: LibApp) => void;
   onClear: (app: LibApp) => void;
   onToggleIgnore: (app: LibApp) => void;
 }
 
-const GameRow: React.FC<GameRowProps> = ({ app, customTitle, busy, ignored, onSet, onClear, onToggleIgnore }) => {
-  const description = customTitle
+const GameRow: React.FC<GameRowProps> = ({ app, customTitle, busy, ignored, current, onSet, onClear, onToggleIgnore }) => {
+  const base = customTitle
     ? `Custom track: ${customTitle}`
     : ignored
       ? 'Automatic search is off for this game.'
       : 'Uses automatic theme search.';
+  const description = current ? `${base} · currently open` : base;
   return (
     <Field
       label={app.name}
@@ -99,12 +101,15 @@ export const LibraryModalContent: React.FC<LibraryModalProps> = ({ onChanged }) 
   const [showAll, setShowAll] = useState(false);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [currentAppId, setCurrentAppId] = useState<number | null>(getCurrentAppId());
   const fileRef = useRef<HTMLInputElement | null>(null);
   const pendingApp = useRef<LibApp | null>(null);
   const customMapRef = useRef(customMap);
   const ignoredRef = useRef(ignoredMap);
   customMapRef.current = customMap;
   ignoredRef.current = ignoredMap;
+
+  useEffect(() => subscribeContext((ctx) => setCurrentAppId(ctx.appId)), []);
 
   useEffect(() => {
     setApps(getLibraryApps());
@@ -198,8 +203,12 @@ export const LibraryModalContent: React.FC<LibraryModalProps> = ({ onChanged }) 
     const normalizedQuery = query.trim().toLocaleLowerCase();
     return filtered
       .filter((app) => !normalizedQuery || app.name.toLocaleLowerCase().includes(normalizedQuery))
-      .sort((a, b) => Number(Boolean(customMap[String(b.appid)])) - Number(Boolean(customMap[String(a.appid)])) || a.name.localeCompare(b.name));
-  }, [apps, customMap, query, showAll]);
+      .sort((a, b) => {
+        if (a.appid === currentAppId) return -1;
+        if (b.appid === currentAppId) return 1;
+        return Number(Boolean(customMap[String(b.appid)])) - Number(Boolean(customMap[String(a.appid)])) || a.name.localeCompare(b.name);
+      });
+  }, [apps, customMap, query, showAll, currentAppId]);
 
   const shown = visible.slice(0, MAX_CARDS);
   const isSearching = query.trim().length > 0;
@@ -242,6 +251,7 @@ export const LibraryModalContent: React.FC<LibraryModalProps> = ({ onChanged }) 
               customTitle={customMap[String(app.appid)]?.title}
               busy={busyId === app.appid}
               ignored={Boolean(ignoredMap[String(app.appid)])}
+              current={app.appid === currentAppId}
               onSet={onSet}
               onClear={onClear}
               onToggleIgnore={onToggleIgnore}

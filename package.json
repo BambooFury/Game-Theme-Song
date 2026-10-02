@@ -8,7 +8,7 @@
   "scripts": {
     "build:assets": "node scripts/build-assets.mjs",
     "dev": "node scripts/build-assets.mjs && starlight watch",
-    "build": "node scripts/build-assets.mjs && starlight pack",
+    "build": "node scripts/build-assets.mjs && starlight pack --release -o dist",
     "prepare": "starlight lsp"
   },
   "devDependencies": {
