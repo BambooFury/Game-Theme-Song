@@ -1,7 +1,7 @@
 [plugin]
 id = "com.bamboofury.game-theme-song"
 name = "Game Theme Song"
-version = "2.1.0"
+version = "2.1.1"
 author = "BambooFury"
 description = "Plays the game's theme music in the background when you open a game page in your Steam library."
 
