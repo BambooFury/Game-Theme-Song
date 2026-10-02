@@ -6,9 +6,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release tag (e.g. v1.0.0)'
+        description: 'Release tag (e.g. v2.0.0)'
         required: true
-        default: 'v1.0.0'
+        default: 'v2.0.0'
 
 permissions:
   contents: write
@@ -25,30 +25,17 @@ jobs:
         uses: oven-sh/setup-bun@v2
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: bun install --no-scripts
 
       - name: Build plugin
-        run: bun run build
+        run: bun run build:assets && bunx --bun starlight pack --release -o .
 
-      - name: Stage release files
-        run: |
-          mkdir -p _release/game-theme-song
-          cp millennium.toml _release/game-theme-song/
-          cp plugin.json _release/game-theme-song/
-          cp README.md _release/game-theme-song/
-          cp LICENSE _release/game-theme-song/
-          cp -r backend _release/game-theme-song/
-          cp -r .millennium _release/game-theme-song/
-          if [ -d icons ]; then cp -r icons _release/game-theme-song/; fi
-
-      - name: Create zip archive
-        run: |
-          cd _release
-          zip -r "../game-theme-song-${{ inputs.tag || github.event.release.tag_name }}.zip" game-theme-song
+      - name: Rename package
+        run: cp com.bamboofury.game-theme-song.star game-theme-song.star
 
       - name: Upload to release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.tag || github.event.release.tag_name }}
-          files: game-theme-song-*.zip
+          files: game-theme-song.star
           token: ${{ secrets.GITHUB_TOKEN }}
