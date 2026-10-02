@@ -1299,7 +1299,6 @@ end
                 if r and r.file then break end
             end
             if not (r and r.file) then
-                logger:warn("no theme audio for " .. tostring(game_name) .. " (khinsider: " .. tostring(kh_err) .. ", soundcloud: " .. tostring(sc_err) .. ")")
 local err_code = sc_err or kh_err or "not_found"
 if rerolling then err_code = "no_alternative" end
 if not rerolling then
@@ -1308,6 +1307,7 @@ if not rerolling then
 end
 local fb = try_fallback()
 if fb then return fb end
+logger:warn("no theme audio for " .. tostring(game_name) .. " (khinsider: " .. tostring(kh_err) .. ", soundcloud: " .. tostring(sc_err) .. ")")
 return json.encode({ ok = false, error = err_code })
             end
         end
