@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.1.1](https://github.com/BambooFury/Game-Theme-Song/compare/v2.1.0...v2.1.1) (2026-10-02)
+
+
+### Bug Fixes
+
+* add missing fallback ffi exports to api ([f0cbc56](https://github.com/BambooFury/Game-Theme-Song/commit/f0cbc56d3258adac9212b215131d01f5b28855aa))
+
+
+### Maintenance
+
+* sync release 2.1.0 ([c5477b6](https://github.com/BambooFury/Game-Theme-Song/commit/c5477b6a2294af3da8bfed66a184b5ae084e7b3b))
+
 ## [2.1.0](https://github.com/BambooFury/Game-Theme-Song/compare/v2.0.1...v2.1.0) (2026-10-02)
 
 

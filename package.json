@@ -1,6 +1,6 @@
 {
   "name": "game-theme-song",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "description": "Plays a game's theme music in the background on its Steam library page.",
   "author": "BambooFury",
   "license": "MIT",
