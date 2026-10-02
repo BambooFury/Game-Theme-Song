@@ -780,7 +780,7 @@ local function score_local_file(rel)
     return score
 end
 
-local mem_cache = { soundtrack = {}, khinsider = {}, track_mp3 = {} }
+local mem_cache = { soundtrack = {}, khinsider = {}, track_mp3 = {}, ia = {} }
 
 local function pick_soundtrack_track(game_name)
     local target = norm_words(clean_game_name(game_name)):gsub("^%s+", ""):gsub("%s+$", "")
@@ -972,6 +972,112 @@ end
 local SC_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 local sc_client_id = nil
 
+local IA_SEARCH = "https://archive.org/advancedsearch.php"
+local IA_DL = "https://archive.org/download/"
+
+local function ia_pick_item(docs, game_name)
+    local target = norm_words(game_name)
+    local best, best_score = nil, 0
+    for _, d in ipairs(docs) do
+        local t = norm_words(tostring(d.title or ""))
+        local score = 0
+        if t == target then
+            score = 1000
+        elseif t:find(target, 1, true) then
+            score = 600
+        else
+            local words, hits = 0, 0
+            for w in target:gmatch("%S+") do
+                words = words + 1
+                if t:find(" " .. w .. " ", 1, true) then hits = hits + 1 end
+            end
+            if words > 0 and hits == words then score = 300 end
+        end
+        if score > best_score then
+            best, best_score = d, score
+        end
+    end
+    return best
+end
+
+local function ia_pick_track(files, album_title)
+    local tracks = {}
+    for _, f in ipairs(files) do
+        local n = tostring(f.name or "")
+        if n:lower():match("%.mp3$") then
+            local title = tostring(f.title or n:match("([^/]+)%.mp3$") or n)
+            local lower = " " .. title:lower() .. " "
+            local score = 0
+            if lower:find("main theme", 1, true) then score = 50
+            elseif lower:find("theme", 1, true) then score = 40
+            elseif lower:find("main menu", 1, true) then score = 35
+            elseif lower:find("title", 1, true) then score = 25
+            elseif lower:find("menu", 1, true) then score = 20 end
+            local len = tonumber(tostring(f.length or ""):match("^%d+")) or 0
+            if len >= 60 and len <= 600 then score = score + 15 end
+            local track_no = tonumber(tostring(f.track or "")) or 999
+            score = score - math.min(track_no, 20)
+            tracks[#tracks + 1] = { f = f, title = title, score = score }
+        end
+    end
+    if #tracks == 0 then return nil end
+    table.sort(tracks, function(a, b)
+        if (a.score or 0) ~= (b.score or 0) then return (a.score or 0) > (b.score or 0) end
+        return (a.f.name or "") < (b.f.name or "")
+    end)
+    local picked = tracks[1]
+    return { file = picked.f, title = picked.title .. " (" .. tostring(album_title or "Internet Archive") .. ")" }
+end
+
+local function ia_resolve(game_name, key, exclude_set, dl_base)
+    dl_base = dl_base or key
+    if not http_available() then return nil, "http_module_missing" end
+    local now = os.time()
+    local cached = mem_cache.ia[game_name]
+    if cached and (now - cached.ts) < 180 then
+        if not cached.picked then return nil, cached.err end
+        if is_excluded(exclude_set, cached.picked.title) then return nil, "ia_excluded" end
+        local escaped = url_encode(cached.picked.file.name):gsub("%%2F", "/")
+        local dl_url = IA_DL .. cached.identifier .. "/" .. escaped
+        local filename, dl_err = download_file(dl_base, "mp3", dl_url, BROWSER_UA)
+        if filename then return { file = filename, title = cached.picked.title }, nil end
+        return nil, "ia_download_failed: " .. tostring(dl_err)
+    end
+    local clean = tostring(game_name):gsub("\226\132\162", ""):gsub("\194\174", ""):gsub("\194\169", "")
+    local query = url_encode('title:("' .. clean .. '") AND mediatype:audio')
+    local url = IA_SEARCH .. "?q=" .. query .. "&fl%5B%5D=identifier&fl%5B%5D=title&rows=10&page=1&output=json"
+    local resp = http.request(url, { timeout = 20, user_agent = BROWSER_UA })
+    if not resp or resp.status ~= 200 or not resp.body then return nil, "ia_search_failed_" .. tostring(resp and resp.status) end
+    local data = safe_decode(cap_body(resp.body))
+    if type(data) ~= "table" or type(data.response) ~= "table" or type(data.response.docs) ~= "table" or #data.response.docs == 0 then
+        return nil, "ia_no_items"
+    end
+    local item = ia_pick_item(data.response.docs, clean)
+    if not item then return nil, "ia_no_match" end
+    local meta_resp = http.request(IA_DL .. item.identifier .. "/metadata.json", { timeout = 20, user_agent = BROWSER_UA })
+    if not meta_resp or meta_resp.status ~= 200 or not meta_resp.body then
+        mem_cache.ia[game_name] = { ts = now, err = "ia_meta_failed" }
+        return nil, "ia_meta_failed"
+    end
+    local meta = safe_decode(cap_body(meta_resp.body))
+    if type(meta) ~= "table" or type(meta.files) ~= "table" then
+        mem_cache.ia[game_name] = { ts = now, err = "ia_no_files" }
+        return nil, "ia_no_files"
+    end
+    local picked = ia_pick_track(meta.files, meta.title or item.title)
+    if not picked then
+        mem_cache.ia[game_name] = { ts = now, err = "ia_no_tracks" }
+        return nil, "ia_no_tracks"
+    end
+    mem_cache.ia[game_name] = { ts = now, picked = picked, identifier = item.identifier }
+    if is_excluded(exclude_set, picked.title) then return nil, "ia_excluded" end
+    local escaped = url_encode(picked.file.name):gsub("%%2F", "/")
+    local dl_url = IA_DL .. item.identifier .. "/" .. escaped
+    local filename, dl_err = download_file(dl_base, "mp3", dl_url, BROWSER_UA)
+    if filename then return { file = filename, title = picked.title }, nil end
+    return nil, "ia_download_failed: " .. tostring(dl_err)
+end
+
 local function sc_fetch_client_id()
     local resp = http.request("https://soundcloud.com/", { user_agent = SC_UA })
     if not resp or resp.status ~= 200 or not resp.body then return nil, "sc_home_failed" end
@@ -1157,6 +1263,10 @@ end
                 r, kh_err = khinsider_resolve(q, key, exclude_set, dl_base)
                 if r and r.file then break end
             end
+        end
+        local ia_err
+        if not (r and r.file) then
+            r, ia_err = ia_resolve(game_name, key, exclude_set, dl_base)
         end
         if not (r and r.file) then
             local sc_err
