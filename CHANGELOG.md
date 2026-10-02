@@ -1,5 +1,32 @@
 # Changelog
 
+## [2.1.0](https://github.com/BambooFury/Game-Theme-Song/compare/v2.0.1...v2.1.0) (2026-10-02)
+
+
+### Features
+
+* add internet archive soundtrack source to resolution chain ([636f78b](https://github.com/BambooFury/Game-Theme-Song/commit/636f78b3856454195f2a88dcaad8f604f22f0fc9))
+* default fallback song with strict soundcloud matching gates ([ffeb7f3](https://github.com/BambooFury/Game-Theme-Song/commit/ffeb7f32ff7b772a65631ef4cc4165b12ebeb83c))
+* pin currently open game on top of custom music list ([ae11331](https://github.com/BambooFury/Game-Theme-Song/commit/ae11331cdabd5e1227c669cd3a075223c6f4288f))
+* set custom song for current game from now playing tab ([24ee8d5](https://github.com/BambooFury/Game-Theme-Song/commit/24ee8d5a3b3ff82294ba664ccc2a8c7f8a4b61ea))
+
+
+### Bug Fixes
+
+* deterministic music search ranking with stable tiebreakers ([ca75af9](https://github.com/BambooFury/Game-Theme-Song/commit/ca75af954d09274e3242be694b57e266d5bf2d14))
+* prefer tracks whose title starts with the game name ([b7df662](https://github.com/BambooFury/Game-Theme-Song/commit/b7df662f50f34c5fa148f188c1336e46629fcadb))
+
+
+### Refactoring
+
+* remove unused search toast component ([c121ec8](https://github.com/BambooFury/Game-Theme-Song/commit/c121ec81a42d9bd18d4871a38d6d49377ec41a3b))
+
+
+### Maintenance
+
+* output build to dist for CI compatibility ([de8ca78](https://github.com/BambooFury/Game-Theme-Song/commit/de8ca784a9a209ee09245a085e907a920d757d39))
+* sync release 2.0.1 ([2d5ce62](https://github.com/BambooFury/Game-Theme-Song/commit/2d5ce62d3eb35c0b6efa927ec1b0c62cc5c85c7a))
+
 ## [2.0.1](https://github.com/BambooFury/Game-Theme-Song/compare/v2.0.0...v2.0.1) (2026-10-01)
 
 
