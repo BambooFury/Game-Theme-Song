@@ -20,3 +20,7 @@ export const setCustomMusicFinish = ffi<[number | string, string, string, string
 export const clearCustomMusic = ffi<[number | string], string>('clear_custom_music');
 export const getIgnoredList = ffi<[], string>('get_ignored_list');
 export const setIgnoredBackend = ffi<[number | string, boolean], string>('set_ignored');
+export const setFallbackBegin = ffi<[], string>('set_fallback_begin');
+export const setFallbackChunk = ffi<[string], string>('set_fallback_chunk');
+export const setFallbackFinish = ffi<[string], string>('set_fallback_finish');
+export const clearFallbackMusic = ffi<[], string>('clear_fallback_music');
