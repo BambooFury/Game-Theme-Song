@@ -97,6 +97,9 @@ local DEFAULT_SETTINGS = {
     stop_on_launch = true,
     manual_search = true,
     confirm_before_download = true,
+    fallback_file = "",
+    fallback_title = "",
+    fallback_ts = 0,
 }
 
 local cache = {}
@@ -574,7 +577,10 @@ local function score_candidate(c, game_name)
     if needle ~= "" and title:find(needle, 1, true) then
         score = score + 45
         c.exact = true
-        if title:sub(2, #needle + 1) == needle then score = score + 25 end
+        if title:sub(2, #needle + 1) == needle then
+            score = score + 25
+            c.start = true
+        end
     elseif words >= 2 and hits < words then
         score = score - math.floor(150 * (words - hits) / words)
     end
@@ -597,6 +603,7 @@ local function score_candidate(c, game_name)
     for _, g in ipairs(GOOD_WORDS) do
         if title:find(" " .. g[1] .. " ", 1, true) then
             score = score + g[2]
+            c.theme = true
             break
         end
     end
@@ -1169,6 +1176,7 @@ local function sc_resolve(game_name, key, exclude_set, dl_base)
     local tried = 0
     for _, c in ipairs(candidates) do
         if tried >= SC_MAX_TRIES or (c.score or 0) < SC_MIN_SCORE then break end
+        if not (c.exact and (c.start or c.theme)) then break end
         if not is_excluded(exclude_set, c.title) then
             tried = tried + 1
             local sep = c.stream_api:find("?", 1, true) and "&" or "?"
@@ -1187,6 +1195,20 @@ end
 local resolve_busy = false
 local io_busy = false
 local custom_list_cache = nil
+
+local function try_fallback()
+    local f = settings.fallback_file
+    if type(f) ~= "string" or f == "" then return nil end
+    if not (fs and fs.exists and fs.exists(join(AUDIO_DIR, f))) then return nil end
+    local ts = tonumber(settings.fallback_ts) or 0
+    return json.encode({
+        ok = true,
+        url = LOOPBACK_BASE .. f .. "?v=" .. tostring(ts),
+        title = sanitize_text(tostring(settings.fallback_title or "")),
+        cached = true,
+        fallback = true,
+    })
+end
 
 local function run_io(name, fn)
   if io_busy or resolve_busy then return json.encode({ ok = false, error = "busy" }) end
@@ -1237,6 +1259,8 @@ end
         local NOT_FOUND_TTL = 6 * 3600
     if not force_refresh and not rerolling and entry and entry.not_found then
     if (os.time() - (entry.ts or 0)) < NOT_FOUND_TTL then
+        local fb = try_fallback()
+        if fb then return fb end
         return json.encode({ ok = false, error = "not_found_cached" })
     end
     cache[key] = nil
@@ -1282,6 +1306,8 @@ if not rerolling then
     cache[key] = { not_found = true, ts = os.time() }
     save_cache()
 end
+local fb = try_fallback()
+if fb then return fb end
 return json.encode({ ok = false, error = err_code })
             end
         end
@@ -1548,6 +1574,81 @@ function clear_custom_music(app_id)
     if not ok then logger:warn("clear_custom_music crashed: " .. tostring(result)); return json.encode({ ok = false, error = "internal_error" }) end
     return result
 end
+
+local FALLBACK_FILE = "fallback.mp3"
+
+---@ffi
+---Start a chunked default-song upload.
+---@return string JSON { ok }
+function set_fallback_begin()
+    upload_sessions["__fallback__"] = { parts = {}, bytes = 0 }
+    return json.encode({ ok = true })
+end
+
+---@ffi
+---Append a base64 chunk to the default-song upload.
+---@param chunk string base64 fragment
+---@return string JSON { ok }
+function set_fallback_chunk(chunk)
+    local s = upload_sessions["__fallback__"]
+    if not s then return json.encode({ ok = false, error = "no_session" }) end
+    local part = tostring(chunk or "")
+    s.bytes = s.bytes + #part
+    if s.bytes > 80 * 1024 * 1024 then upload_sessions["__fallback__"] = nil; return json.encode({ ok = false, error = "file_too_large" }) end
+    s.parts[#s.parts + 1] = part
+    return json.encode({ ok = true })
+end
+
+---@ffi
+---Finish the default-song upload and store it.
+---@param title_b64 string base64 track title
+---@return string JSON { ok, title }
+function set_fallback_finish(title_b64)
+    local ok, result = pcall(function()
+        local s = upload_sessions["__fallback__"]
+        if not s then return json.encode({ ok = false, error = "no_session" }) end
+        local data = table.concat(s.parts)
+        upload_sessions["__fallback__"] = nil
+        local bytes = base64_decode(data)
+        if #bytes < 1024 then return json.encode({ ok = false, error = "file_too_small" }) end
+        if #bytes > 50 * 1024 * 1024 then return json.encode({ ok = false, error = "file_too_large" }) end
+        pcall(fs.create_directories, AUDIO_DIR)
+        if not write_file(join(AUDIO_DIR, FALLBACK_FILE), bytes) then return json.encode({ ok = false, error = "write_failed" }) end
+        pcall(fs.create_directories, CUSTOM_BACKUP_DIR)
+        copy_file(join(AUDIO_DIR, FALLBACK_FILE), join(CUSTOM_BACKUP_DIR, FALLBACK_FILE))
+        local title = sanitize_text(base64_decode(tostring(title_b64 or "")))
+        if title == "" then title = "Default song" end
+        settings.fallback_file = FALLBACK_FILE
+        settings.fallback_title = title
+        settings.fallback_ts = os.time()
+        save_settings()
+        return json.encode({ ok = true, title = title })
+    end)
+    collectgarbage("collect")
+    collectgarbage("collect")
+    if not ok then logger:warn("set_fallback_finish crashed: " .. tostring(result)); return json.encode({ ok = false, error = "internal_error" }) end
+    return result
+end
+
+---@ffi
+---Remove the default song.
+---@return string JSON { ok }
+function clear_fallback_music()
+    local ok, result = pcall(function()
+        if fs and fs.remove then
+            pcall(fs.remove, join(AUDIO_DIR, FALLBACK_FILE))
+            pcall(fs.remove, join(CUSTOM_BACKUP_DIR, FALLBACK_FILE))
+        end
+        settings.fallback_file = ""
+        settings.fallback_title = ""
+        settings.fallback_ts = 0
+        save_settings()
+        return json.encode({ ok = true })
+    end)
+    if not ok then logger:warn("clear_fallback_music crashed: " .. tostring(result)); return json.encode({ ok = false, error = "internal_error" }) end
+    return result
+end
+
 
 ---@ffi
 ---Return the current plugin settings.

@@ -1,10 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { DialogBody, DialogBodyText, DialogButton, DialogButtonSecondary, DialogHeader, SliderField, ToggleField } from 'millennium';
-import { MdMusicNote, MdSkipNext, MdStop, MdCheckCircle, MdSettings, MdLibraryMusic, MdDownload, MdSearch, MdSportsEsports, MdUploadFile } from 'react-icons/md';
+import { MdMusicNote, MdSkipNext, MdStop, MdCheckCircle, MdSettings, MdLibraryMusic, MdDownload, MdSearch, MdSportsEsports, MdUploadFile, MdDeleteOutline } from 'react-icons/md';
 import { warn } from './log';
-import { getBackendSettings, setBackendSetting, getCacheInfo, getCustomList } from './api';
+import { getBackendSettings, setBackendSetting, getCacheInfo, getCustomList, clearFallbackMusic } from './api';
 import { readFileBase64 } from './base64';
-import { ACCEPT_EXTS, MAX_UPLOAD_BYTES, uploadCustomMusic } from '../settings/library';
+import { ACCEPT_EXTS, MAX_UPLOAD_BYTES, uploadCustomMusic, uploadFallbackMusic } from '../settings/library';
 import {
   state, getAudioEl, setGlobalCustomCount, setGlobalCacheInfo, getCustomCount, subscribeCustomCount,
   subscribeCacheInfo, subscribeContext, getContext, subscribePlayback, isPlaying, reapplyForApp,
@@ -63,6 +63,24 @@ function NowPlayingTab(): React.JSX.Element {
   const [savingCustom, setSavingCustom] = useState(false);
   const [customError, setCustomError] = useState<string | null>(null);
   const customFileRef = useRef<HTMLInputElement | null>(null);
+  const [savingFallback, setSavingFallback] = useState(false);
+  const fallbackFileRef = useRef<HTMLInputElement | null>(null);
+
+  const onFallbackPicked = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    const appId = ctx.appId;
+    if (!file || appId == null) return;
+    setSavingFallback(true);
+    try {
+      const response = await uploadFallbackMusic(file.name, await readFileBase64(file));
+      if (response?.ok) void reapplyForApp(appId);
+    } catch (e) {
+      warn('set fallback failed', e);
+    } finally {
+      setSavingFallback(false);
+    }
+  };
 
   useEffect(() => subscribeContext(setCtx), []);
   useEffect(() => subscribePlayback(() => setPlaying(isPlaying())), []);
@@ -197,13 +215,24 @@ function NowPlayingTab(): React.JSX.Element {
                 <MdCheckCircle size={18} />
                 <span style={{ fontSize: '13px' }}>Song saved</span>
               </span>
-            ) : state.settings.manual_search && !searching ? (
-              <DialogButtonSecondary onClick={() => rerollCurrent()}>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                  <MdSearch size={16} />
-                  Search again
-                </span>
-              </DialogButtonSecondary>
+            ) : !playing && !searching ? (
+              <>
+                {state.settings.manual_search && (
+                  <DialogButtonSecondary onClick={() => rerollCurrent()}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                      <MdSearch size={16} />
+                      Search again
+                    </span>
+                  </DialogButtonSecondary>
+                )}
+                <DialogButtonSecondary disabled={savingFallback} onClick={() => fallbackFileRef.current?.click()}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                    <MdUploadFile size={16} />
+                    {savingFallback ? 'Saving…' : 'Set default song'}
+                  </span>
+                </DialogButtonSecondary>
+                <input ref={fallbackFileRef} type="file" accept={ACCEPT_EXTS} hidden onChange={(e) => void onFallbackPicked(e)} />
+              </>
             ) : null}
             {hasGame && !searching && (
               <DialogButtonSecondary disabled={savingCustom} onClick={() => customFileRef.current?.click()}>
@@ -231,6 +260,44 @@ function SettingsTab(): React.JSX.Element {
   const [stopOnLaunch, setStopOnLaunch] = useState(state.settings.stop_on_launch);
   const [manualSearch, setManualSearch] = useState(state.settings.manual_search);
   const [confirmDl, setConfirmDl] = useState(state.settings.confirm_before_download);
+  const [fallbackTitle, setFallbackTitle] = useState(typeof state.settings.fallback_title === 'string' ? state.settings.fallback_title : '');
+  const [fallbackSet, setFallbackSet] = useState(Boolean(state.settings.fallback_file));
+  const [savingFallback, setSavingFallback] = useState(false);
+  const fallbackFileRef = useRef<HTMLInputElement | null>(null);
+
+  const onFallbackPicked = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    setSavingFallback(true);
+    try {
+      const response = await uploadFallbackMusic(file.name, await readFileBase64(file));
+      if (!response?.ok) {
+        warn('set fallback failed: ' + (response?.error ?? 'unknown'));
+        return;
+      }
+      state.settings.fallback_file = 'fallback.mp3';
+      state.settings.fallback_title = file.name.replace(/\.[^.]+$/, '');
+      setFallbackTitle(state.settings.fallback_title);
+      setFallbackSet(true);
+    } catch (e) {
+      warn('set fallback failed', e);
+    } finally {
+      setSavingFallback(false);
+    }
+  };
+
+  const onFallbackClear = async () => {
+    try {
+      await clearFallbackMusic();
+      state.settings.fallback_file = '';
+      state.settings.fallback_title = '';
+      setFallbackTitle('');
+      setFallbackSet(false);
+    } catch (e) {
+      warn('clear fallback failed', e);
+    }
+  };
 
   useEffect(() => {
     (async () => {
@@ -245,6 +312,8 @@ function SettingsTab(): React.JSX.Element {
           setStopOnLaunch(state.settings.stop_on_launch);
           setManualSearch(state.settings.manual_search);
           setConfirmDl(state.settings.confirm_before_download);
+          setFallbackTitle(typeof state.settings.fallback_title === 'string' ? state.settings.fallback_title : '');
+          setFallbackSet(Boolean(state.settings.fallback_file));
           const a = getAudioEl();
           if (a) a.volume = state.settings.volume;
         }
@@ -302,6 +371,25 @@ function SettingsTab(): React.JSX.Element {
       <ToggleField label="Manual song search" description={manualSearch ? 'When a theme is found, use the skip button to pick a different song.' : 'Classic mode — just play the first theme found, no skip button.'} checked={manualSearch} onChange={onManualSearch} />
       <ToggleField label="Keep songs only after keeping" description={confirmDl ? 'A found song is deleted if you leave the page without keeping it.' : 'Every found song stays in the download cache automatically.'} checked={confirmDl} onChange={onConfirmDl} />
       <ToggleField label="Stop on game launch" description={stopOnLaunch ? 'Theme music stops when you launch a game.' : 'Theme music keeps playing when a game starts.'} checked={stopOnLaunch} onChange={onStopOnLaunch} />
+      <div style={{ paddingTop: '8px' }}>
+        <div style={{ fontSize: '14px', fontWeight: 600 }}>Default song</div>
+        <div style={{ fontSize: '12px', color: 'var(--secondary-text-color, rgba(255,255,255,0.5))' }}>
+          {fallbackSet
+            ? `Plays for games with no found theme. Current: ${fallbackTitle}`
+            : 'Plays for games where no theme could be found.'}
+        </div>
+        <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
+          <DialogButtonSecondary disabled={savingFallback} onClick={() => fallbackFileRef.current?.click()}>
+            {savingFallback ? 'Saving…' : fallbackSet ? 'Replace' : 'Choose file'}
+          </DialogButtonSecondary>
+          {fallbackSet && (
+            <DialogButtonSecondary disabled={savingFallback} onClick={() => void onFallbackClear()}>
+              <MdDeleteOutline size={15} />
+            </DialogButtonSecondary>
+          )}
+        </div>
+        <input ref={fallbackFileRef} type="file" accept={ACCEPT_EXTS} hidden onChange={(e) => void onFallbackPicked(e)} />
+      </div>
     </div>
   );
 }
