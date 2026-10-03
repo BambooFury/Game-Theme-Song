@@ -103,5 +103,8 @@
   "Faster every next visit. The first play for a game can take a few seconds while a fresh audio link is found. After that the track is cached and starts almost instantly.": "次回から速く。初回は数秒かかることがあります。その後はキャッシュされ、ほぼ瞬時に再生されます。",
   "Tune it your way. Open the popup's Settings tab to set the volume, loop the song, or cap how long each theme plays.": "お好みで調整。ポップアップの設定タブで音量、ループ、再生時間の上限を設定できます。",
   "This message won't appear again.": "このメッセージは再度表示されません。",
-  "Game Theme Song — music for this game": "Game Theme Song — このゲームの音楽"
+  "Game Theme Song — music for this game": "Game Theme Song — このゲームの音楽",
+  "Interface language": "インターフェースの言語",
+  "The plugin uses your Steam language.": "プラグインは Steam の言語を使用します。",
+  "The plugin interface stays in English.": "プラグインのインターフェースは英語のままです。"
 }

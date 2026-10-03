@@ -30,8 +30,14 @@ const LANG = (() => {
   }
 })();
 
+let localized = true;
+
+export function setLocalizationEnabled(v: boolean) {
+  localized = v;
+}
+
 export function t(s: string, vars?: Record<string, string | number>): string {
-  let out = TABLE[LANG]?.[s] ?? s;
+  let out = localized ? (TABLE[LANG]?.[s] ?? s) : s;
   if (vars) {
     for (const k in vars) out = out.replace(`{${k}}`, String(vars[k]));
   }

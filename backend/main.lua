@@ -100,6 +100,7 @@ local DEFAULT_SETTINGS = {
     fallback_file = "",
     fallback_title = "",
     fallback_ts = 0,
+    localized = true,
 }
 
 local cache = {}

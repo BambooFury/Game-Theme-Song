@@ -103,5 +103,8 @@
   "Faster every next visit. The first play for a game can take a few seconds while a fresh audio link is found. After that the track is cached and starts almost instantly.": "之后更快。首次播放可能需要几秒钟来寻找音频链接。之后曲目会被缓存，几乎立即开始。",
   "Tune it your way. Open the popup's Settings tab to set the volume, loop the song, or cap how long each theme plays.": "按自己的方式调整。在弹窗的设置选项卡中设置音量、循环播放或限制主题播放时长。",
   "This message won't appear again.": "此消息将不再出现。",
-  "Game Theme Song — music for this game": "Game Theme Song — 该游戏的音乐"
+  "Game Theme Song — music for this game": "Game Theme Song — 该游戏的音乐",
+  "Interface language": "界面语言",
+  "The plugin uses your Steam language.": "插件使用你的 Steam 语言。",
+  "The plugin interface stays in English.": "插件界面保持英文。"
 }

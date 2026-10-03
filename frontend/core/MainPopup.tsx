@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { DialogBody, DialogBodyText, DialogButton, DialogButtonSecondary, DialogHeader, SliderField, ToggleField } from 'millennium';
 import { MdMusicNote, MdSkipNext, MdStop, MdCheckCircle, MdSettings, MdLibraryMusic, MdDownload, MdSearch, MdSportsEsports, MdUploadFile, MdDeleteOutline } from 'react-icons/md';
 import { warn } from './log';
-import { t } from './i18n';
+import { t, setLocalizationEnabled } from './i18n';
 import { getBackendSettings, setBackendSetting, getCacheInfo, getCustomList, clearFallbackMusic, exportCollection, importCollection } from './api';
 import { readFileBase64 } from './base64';
 import { ACCEPT_EXTS, MAX_UPLOAD_BYTES, uploadCustomMusic, uploadFallbackMusic } from '../settings/library';
@@ -255,7 +255,7 @@ function NowPlayingTab(): React.JSX.Element {
   );
 }
 
-function SettingsTab(): React.JSX.Element {
+function SettingsTab({ onUiRefresh }: { onUiRefresh: () => void }): React.JSX.Element {
   const [percent, setPercent] = useState(Math.round(state.settings.volume * 100));
   const [loop, setLoop] = useState(state.settings.loop);
   const [maxSec, setMaxSec] = useState(state.settings.max_seconds);
@@ -269,13 +269,22 @@ function SettingsTab(): React.JSX.Element {
   const fallbackFileRef = useRef<HTMLInputElement | null>(null);
   const [collectionBusy, setCollectionBusy] = useState(false);
   const [collectionInfo, setCollectionInfo] = useState<string | null>(null);
+  const [localizedUi, setLocalizedUi] = useState(state.settings.localized !== false);
+
+  const onLocalizedToggle = (checked: boolean) => {
+    setLocalizedUi(checked);
+    state.settings.localized = checked;
+    setLocalizationEnabled(checked);
+    void setBackendSetting('localized', checked).catch(e => warn('save localized failed', e));
+    onUiRefresh();
+  };
 
   const onExportCollection = async () => {
     setCollectionBusy(true);
     try {
       const parse = (raw: unknown) => (typeof raw === 'string' ? JSON.parse(raw) : raw) as { ok?: boolean; path?: string; files?: number; error?: string };
       const r = parse(await exportCollection());
-      if (r?.ok) setCollectionInfo(t('Saved {files} files to {path}', { files: r.files, path: r.path }));
+      if (r?.ok) setCollectionInfo(t('Saved {files} files to {path}', { files: r.files ?? 0, path: r.path ?? '' }));
       else if (r?.error === 'nothing_to_export') setCollectionInfo(t('Nothing to export yet.'));
       else setCollectionInfo(t('Export failed: {error}', { error: r?.error ?? 'unknown' }));
     } catch (e) {
@@ -292,7 +301,7 @@ function SettingsTab(): React.JSX.Element {
       const parse = (raw: unknown) => (typeof raw === 'string' ? JSON.parse(raw) : raw) as { ok?: boolean; files?: number; error?: string };
       const r = parse(await importCollection());
       if (r?.ok) {
-        setCollectionInfo(t('Imported {files} files.', { files: r.files }));
+        setCollectionInfo(t('Imported {files} files.', { files: r.files ?? 0 }));
         const raw = await getBackendSettings();
         const st = typeof raw === 'string' ? JSON.parse(raw) : raw;
         if (st && typeof st === 'object') {
@@ -363,6 +372,8 @@ function SettingsTab(): React.JSX.Element {
           setFadeSec(state.settings.fade_seconds);
           setFallbackTitle(typeof state.settings.fallback_title === 'string' ? state.settings.fallback_title : '');
           setFallbackSet(Boolean(state.settings.fallback_file));
+          setLocalizedUi(state.settings.localized !== false);
+          setLocalizationEnabled(state.settings.localized !== false);
           const a = getAudioEl();
           if (a) a.volume = state.settings.volume;
         }
@@ -428,6 +439,7 @@ function SettingsTab(): React.JSX.Element {
       <ToggleField label={t("Manual song search")} description={manualSearch ? t('When a theme is found, use the skip button to pick a different song.') : t('Classic mode — just play the first theme found, no skip button.')} checked={manualSearch} onChange={onManualSearch} />
       <ToggleField label={t("Keep songs only after keeping")} description={confirmDl ? t('A found song is deleted if you leave the page without keeping it.') : t('Every found song stays in the download cache automatically.')} checked={confirmDl} onChange={onConfirmDl} />
       <ToggleField label={t("Stop on game launch")} description={stopOnLaunch ? t('Theme music stops when you launch a game.') : t('Theme music keeps playing when a game starts.')} checked={stopOnLaunch} onChange={onStopOnLaunch} />
+      <ToggleField label={t('Interface language')} description={localizedUi ? t('The plugin uses your Steam language.') : t('The plugin interface stays in English.')} checked={localizedUi} onChange={onLocalizedToggle} />
       <div style={{ paddingTop: '8px' }}>
         <div style={{ fontSize: '14px', fontWeight: 600 }}>{t('Default song')}</div>
         <div style={{ fontSize: '12px', color: 'var(--secondary-text-color, rgba(255,255,255,0.5))' }}>
@@ -472,6 +484,7 @@ export const MainPopupContent: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabId>('nowplaying');
   const [customCount, setCustomCount] = useState<number | null>(getCustomCount());
   const [cacheCount, setCacheCount] = useState<number | null>(null);
+  const [uiTick, setUiTick] = useState(0);
 
   useEffect(() => subscribeCustomCount(setCustomCount), []);
   useEffect(() => subscribeCacheInfo((info: CacheInfo) => setCacheCount(info.count)), []);
@@ -521,10 +534,12 @@ export const MainPopupContent: React.FC = () => {
         ))}
       </div>
       <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-        {activeTab === 'nowplaying' && <NowPlayingTab />}
-        {activeTab === 'settings' && <SettingsTab />}
-        {activeTab === 'cache' && <CacheModalContent />}
-        {activeTab === 'library' && <LibraryModalContent onChanged={(map) => setGlobalCustomCount(Object.keys(map).length)} />}
+        <div key={uiTick} style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+          {activeTab === 'nowplaying' && <NowPlayingTab />}
+          {activeTab === 'settings' && <SettingsTab onUiRefresh={() => setUiTick((v) => v + 1)} />}
+          {activeTab === 'cache' && <CacheModalContent />}
+          {activeTab === 'library' && <LibraryModalContent onChanged={(map) => setGlobalCustomCount(Object.keys(map).length)} />}
+        </div>
       </div>
     </div>
   );

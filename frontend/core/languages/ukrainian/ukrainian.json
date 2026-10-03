@@ -103,5 +103,8 @@
   "Faster every next visit. The first play for a game can take a few seconds while a fresh audio link is found. After that the track is cached and starts almost instantly.": "Швидше з кожним разом. Перше відтворення може тривати кілька секунд. Після цього трек у кеші та стартує майже миттєво.",
   "Tune it your way. Open the popup's Settings tab to set the volume, loop the song, or cap how long each theme plays.": "Налаштуйте під себе. У табі налаштувань попапа задайте гучність, повтор пісні або обмеження її тривалості.",
   "This message won't appear again.": "Це повідомлення більше не з'явиться.",
-  "Game Theme Song — music for this game": "Game Theme Song — музика для цієї гри"
+  "Game Theme Song — music for this game": "Game Theme Song — музика для цієї гри",
+  "Interface language": "Мова інтерфейсу",
+  "The plugin uses your Steam language.": "Плагін використовує мову вашого Steam.",
+  "The plugin interface stays in English.": "Інтерфейс плагіна залишається англійською."
 }

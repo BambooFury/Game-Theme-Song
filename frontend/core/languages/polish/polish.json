@@ -103,5 +103,8 @@
   "Faster every next visit. The first play for a game can take a few seconds while a fresh audio link is found. After that the track is cached and starts almost instantly.": "Szybciej przy kolejnych wizytach. Pierwsze odtworzenie może potrwać kilka sekund. Potem utwór jest w pamięci i startuje niemal natychmiast.",
   "Tune it your way. Open the popup's Settings tab to set the volume, loop the song, or cap how long each theme plays.": "Dostosuj po swojemu. W karcie Ustawienia: głośność, zapętlenie lub maksymalna długość.",
   "This message won't appear again.": "Ta wiadomość nie pojawi się ponownie.",
-  "Game Theme Song — music for this game": "Game Theme Song — muzyka do tej gry"
+  "Game Theme Song — music for this game": "Game Theme Song — muzyka do tej gry",
+  "Interface language": "Język interfejsu",
+  "The plugin uses your Steam language.": "Wtyczka używa języka twojego Steam.",
+  "The plugin interface stays in English.": "Interfejs wtyczki pozostaje po angielsku."
 }
