@@ -474,10 +474,10 @@ function SettingsTab({ onUiRefresh }: { onUiRefresh: () => void }): React.JSX.El
 }
 
 const TABS: { id: TabId; label: string; icon: React.ReactNode }[] = [
-  { id: 'nowplaying', label: t('Now Playing'), icon: <MdMusicNote size={15} /> },
-  { id: 'settings', label: t('Settings'), icon: <MdSettings size={14} /> },
-  { id: 'cache', label: t('Downloaded'), icon: <MdDownload size={15} /> },
-  { id: 'library', label: t('Custom Music'), icon: <MdLibraryMusic size={15} /> },
+  { id: 'nowplaying', label: 'Now Playing', icon: <MdMusicNote size={15} /> },
+  { id: 'settings', label: 'Settings', icon: <MdSettings size={14} /> },
+  { id: 'cache', label: 'Downloaded', icon: <MdDownload size={15} /> },
+  { id: 'library', label: 'Custom Music', icon: <MdLibraryMusic size={15} /> },
 ];
 
 export const MainPopupContent: React.FC = () => {
@@ -524,7 +524,7 @@ export const MainPopupContent: React.FC = () => {
             onClick={() => setActiveTab(tab.id)}
           >
             {tab.icon}
-            {tab.label}
+            {t(tab.label)}
             {tab.id === 'library' && customCount != null && customCount > 0 && (
               <span className="gts-tab-count">{customCount}</span>
             )}
