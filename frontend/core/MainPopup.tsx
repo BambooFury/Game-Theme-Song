@@ -260,6 +260,7 @@ function SettingsTab(): React.JSX.Element {
   const [stopOnLaunch, setStopOnLaunch] = useState(state.settings.stop_on_launch);
   const [manualSearch, setManualSearch] = useState(state.settings.manual_search);
   const [confirmDl, setConfirmDl] = useState(state.settings.confirm_before_download);
+  const [fadeSec, setFadeSec] = useState(state.settings.fade_seconds);
   const [fallbackTitle, setFallbackTitle] = useState(typeof state.settings.fallback_title === 'string' ? state.settings.fallback_title : '');
   const [fallbackSet, setFallbackSet] = useState(Boolean(state.settings.fallback_file));
   const [savingFallback, setSavingFallback] = useState(false);
@@ -312,6 +313,7 @@ function SettingsTab(): React.JSX.Element {
           setStopOnLaunch(state.settings.stop_on_launch);
           setManualSearch(state.settings.manual_search);
           setConfirmDl(state.settings.confirm_before_download);
+          setFadeSec(state.settings.fade_seconds);
           setFallbackTitle(typeof state.settings.fallback_title === 'string' ? state.settings.fallback_title : '');
           setFallbackSet(Boolean(state.settings.fallback_file));
           const a = getAudioEl();
@@ -328,6 +330,13 @@ function SettingsTab(): React.JSX.Element {
     void setBackendSetting('volume', vol).catch(e => warn('save volume failed', e));
     const a = getAudioEl();
     if (a && !a.paused) a.volume = vol;
+  };
+
+  const onFade = (sec: number) => {
+    const v = Math.max(0, Math.min(5, Math.round(sec * 2) / 2));
+    setFadeSec(v);
+    state.settings.fade_seconds = v;
+    void setBackendSetting('fade_seconds', v).catch(e => warn('save fade failed', e));
   };
 
   const onLoop = (checked: boolean) => {
@@ -366,6 +375,7 @@ function SettingsTab(): React.JSX.Element {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '16px', overflowY: 'auto', flex: 1, minHeight: 0 }}>
       <SliderField label="Music volume" description={percent > 0 ? 'Background theme music volume.' : 'Theme music is muted.'} value={percent} min={0} max={100} step={1} showValue editableValue valueSuffix="%" onChange={onSlider} />
+      <SliderField label="Fade duration" description={fadeSec > 0 ? `Music fades in and out over ${fadeSec}s when switching or leaving games.` : 'Music switches instantly with no fade.'} value={fadeSec} min={0} max={5} step={0.5} showValue valueSuffix="s" onChange={onFade} />
       <SliderField label="Song length limit" description={maxSec > 0 ? (loop ? `The song restarts after ${formatLimit(maxSec)}.` : `The song stops after ${formatLimit(maxSec)}.`) : 'The full song plays.'} value={maxSec} min={0} max={300} step={5} showValue editableValue valueSuffix="s" onChange={onLimit} />
       <ToggleField label="Loop song" description={loop ? 'The theme song repeats while you stay on the game page.' : 'The theme song plays once and stops.'} checked={loop} onChange={onLoop} />
       <ToggleField label="Manual song search" description={manualSearch ? 'When a theme is found, use the skip button to pick a different song.' : 'Classic mode — just play the first theme found, no skip button.'} checked={manualSearch} onChange={onManualSearch} />
