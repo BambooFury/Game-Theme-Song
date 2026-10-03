@@ -109,5 +109,8 @@
   "Game Theme Song — music for this game": "Game Theme Song — музыка для этой игры",
   "Interface language": "Язык интерфейса",
   "The plugin uses your Steam language.": "Плагин использует язык вашего Steam.",
-  "The plugin interface stays in English.": "Интерфейс плагина остаётся английским."
+  "The plugin interface stays in English.": "Интерфейс плагина остаётся английским.",
+  "Open Game Theme Song": "Открыть Game Theme Song",
+  "Opens the music popup - the note button does not show on this platform.": "Открывает окно музыки — на этой платформе кнопка с нотой не отображается.",
+  "Open": "Открыть"
 }
