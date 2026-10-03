@@ -23,6 +23,7 @@ export interface Settings {
   fallback_file: string;
   fallback_title: string;
   fallback_ts: number;
+  localized: boolean;
 }
 
 export interface CacheInfo {

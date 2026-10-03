@@ -1,6 +1,7 @@
 import type { Settings, CacheInfo, ContextState, PlaybackMode } from './types';
 import { getThemeAudio, rerollTheme, invalidateAudio, getBackendSettings, getCacheInfo, getIgnoredList, setIgnoredBackend } from './api';
 import { warn } from './log';
+import { setLocalizationEnabled } from './i18n';
 
 const DEFAULTS: Settings = {
   enabled: true,
@@ -35,6 +36,7 @@ export async function loadSettingsOnce() {
     const s = typeof raw === 'string' ? JSON.parse(raw) : raw;
     if (s && typeof s === 'object') {
       state.settings = { ...state.settings, ...s };
+      setLocalizationEnabled(state.settings.localized !== false);
       if (audioEl) audioEl.volume = state.settings.volume;
     }
   } catch (e) {

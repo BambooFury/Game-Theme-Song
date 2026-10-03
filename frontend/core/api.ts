@@ -24,3 +24,5 @@ export const setFallbackBegin = ffi<[], string>('set_fallback_begin');
 export const setFallbackChunk = ffi<[string], string>('set_fallback_chunk');
 export const setFallbackFinish = ffi<[string], string>('set_fallback_finish');
 export const clearFallbackMusic = ffi<[], string>('clear_fallback_music');
+export const exportCollection = ffi<[], string>('export_collection');
+export const importCollection = ffi<[], string>('import_collection');

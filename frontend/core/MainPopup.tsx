@@ -2,7 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { DialogBody, DialogBodyText, DialogButton, DialogButtonSecondary, DialogHeader, SliderField, ToggleField } from 'millennium';
 import { MdMusicNote, MdSkipNext, MdStop, MdCheckCircle, MdSettings, MdLibraryMusic, MdDownload, MdSearch, MdSportsEsports, MdUploadFile, MdDeleteOutline } from 'react-icons/md';
 import { warn } from './log';
-import { getBackendSettings, setBackendSetting, getCacheInfo, getCustomList, clearFallbackMusic } from './api';
+import { t, setLocalizationEnabled } from './i18n';
+import { getBackendSettings, setBackendSetting, getCacheInfo, getCustomList, clearFallbackMusic, exportCollection, importCollection } from './api';
 import { readFileBase64 } from './base64';
 import { ACCEPT_EXTS, MAX_UPLOAD_BYTES, uploadCustomMusic, uploadFallbackMusic } from '../settings/library';
 import {
@@ -65,7 +66,6 @@ function NowPlayingTab(): React.JSX.Element {
   const customFileRef = useRef<HTMLInputElement | null>(null);
   const [savingFallback, setSavingFallback] = useState(false);
   const fallbackFileRef = useRef<HTMLInputElement | null>(null);
-
   const onFallbackPicked = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     event.target.value = '';
@@ -135,12 +135,14 @@ function NowPlayingTab(): React.JSX.Element {
   const searching = mode === 'searching';
 
   const statusText = searching
-    ? 'Searching for theme music…'
+    ? t('Searching for theme music…')
     : playing
-      ? `Playing: ${ctx.title ?? 'theme music'}`
+      ? t('Playing: {title}', { title: ctx.title ?? t('theme music') })
       : mode === 'ready'
-        ? `Ready: ${ctx.title ?? 'theme music'}`
-        : 'No theme found for this game';
+        ? t('Ready: {title}', { title: ctx.title ?? t('theme music') })
+        : ctx.title
+          ? t('Stopped: {title}', { title: ctx.title })
+          : t('No theme found for this game');
 
   const pct = showProgress && duration > 0 ? Math.min(100, (progress / duration) * 100) : 0;
   const timeLabel = showProgress && duration > 0
@@ -162,16 +164,16 @@ function NowPlayingTab(): React.JSX.Element {
           <div style={{ width: '72px', height: '72px', borderRadius: '50%', background: 'rgba(103,193,245,0.1)', border: '1px solid rgba(103,193,245,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <MdSportsEsports size={36} style={{ color: '#67c1f5', opacity: 0.7 }} />
           </div>
-          <div style={{ fontSize: '17px', fontWeight: 700, color: 'var(--main-text-color, #ffffff)' }}>No game open</div>
-          <div style={{ fontSize: '13px', lineHeight: 1.6, color: 'var(--secondary-text-color, rgba(255,255,255,0.5))', maxWidth: '320px' }}>Open a game page in your library to hear its theme music here.</div>
+          <div style={{ fontSize: '17px', fontWeight: 700, color: 'var(--main-text-color, #ffffff)' }}>{t('No game open')}</div>
+          <div style={{ fontSize: '13px', lineHeight: 1.6, color: 'var(--secondary-text-color, rgba(255,255,255,0.5))', maxWidth: '320px' }}>{t('Open a game page in your library to hear its theme music here.')}</div>
         </div>
       ) : searching ? (
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '14px', flex: 1, padding: '40px 0' }}>
           <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: 'rgba(103,193,245,0.1)', border: '1px solid rgba(103,193,245,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <MdSearch size={28} style={{ color: '#67c1f5', opacity: 0.7 }} />
           </div>
-          <div style={{ fontSize: '15px', fontWeight: 600, color: 'var(--main-text-color, #fff)' }}>Searching for theme music</div>
-          <div style={{ fontSize: '12px', color: 'var(--secondary-text-color, rgba(255,255,255,0.5))' }}>Looking for a track for this game…</div>
+          <div style={{ fontSize: '15px', fontWeight: 600, color: 'var(--main-text-color, #fff)' }}>{t('Searching for theme music…')}</div>
+          <div style={{ fontSize: '12px', color: 'var(--secondary-text-color, rgba(255,255,255,0.5))' }}>{t('Looking for a track for this game…')}</div>
         </div>
       ) : (
         <DialogBody>
@@ -191,7 +193,7 @@ function NowPlayingTab(): React.JSX.Element {
                   <DialogButtonSecondary disabled={false} onClick={() => void rerollCurrent()}>
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                       <MdSkipNext size={16} />
-                      Find another
+                      {t('Find another')}
                     </span>
                   </DialogButtonSecondary>
                 )}
@@ -199,21 +201,21 @@ function NowPlayingTab(): React.JSX.Element {
                   <DialogButtonSecondary onClick={() => stopAudio(0.5)}>
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                       <MdStop size={16} />
-                      Stop
+                      {t('Stop')}
                     </span>
                   </DialogButtonSecondary>
                 )}
                 <DialogButton onClick={() => acceptCurrent()}>
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                     <MdCheckCircle size={16} />
-                    Keep this song
+                    {t('Keep this song')}
                   </span>
                 </DialogButton>
               </>
             ) : playing && mode === 'ready' ? (
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: 'var(--color-online, #5dc26a)' }}>
                 <MdCheckCircle size={18} />
-                <span style={{ fontSize: '13px' }}>Song saved</span>
+                <span style={{ fontSize: '13px' }}>{t('Song saved')}</span>
               </span>
             ) : !playing && !searching ? (
               <>
@@ -221,14 +223,14 @@ function NowPlayingTab(): React.JSX.Element {
                   <DialogButtonSecondary onClick={() => rerollCurrent()}>
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                       <MdSearch size={16} />
-                      Search again
+                      {t('Search again')}
                     </span>
                   </DialogButtonSecondary>
                 )}
                 <DialogButtonSecondary disabled={savingFallback} onClick={() => fallbackFileRef.current?.click()}>
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                     <MdUploadFile size={16} />
-                    {savingFallback ? 'Saving…' : 'Set default song'}
+                    {savingFallback ? t('Saving…') : t('Set default song')}
                   </span>
                 </DialogButtonSecondary>
                 <input ref={fallbackFileRef} type="file" accept={ACCEPT_EXTS} hidden onChange={(e) => void onFallbackPicked(e)} />
@@ -238,7 +240,7 @@ function NowPlayingTab(): React.JSX.Element {
               <DialogButtonSecondary disabled={savingCustom} onClick={() => customFileRef.current?.click()}>
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                   <MdUploadFile size={16} />
-                  {savingCustom ? 'Saving…' : 'Set custom song'}
+                  {savingCustom ? t('Saving…') : t('Set custom song')}
                 </span>
               </DialogButtonSecondary>
             )}
@@ -253,17 +255,72 @@ function NowPlayingTab(): React.JSX.Element {
   );
 }
 
-function SettingsTab(): React.JSX.Element {
+function SettingsTab({ onUiRefresh }: { onUiRefresh: () => void }): React.JSX.Element {
   const [percent, setPercent] = useState(Math.round(state.settings.volume * 100));
   const [loop, setLoop] = useState(state.settings.loop);
   const [maxSec, setMaxSec] = useState(state.settings.max_seconds);
   const [stopOnLaunch, setStopOnLaunch] = useState(state.settings.stop_on_launch);
   const [manualSearch, setManualSearch] = useState(state.settings.manual_search);
   const [confirmDl, setConfirmDl] = useState(state.settings.confirm_before_download);
+  const [fadeSec, setFadeSec] = useState(state.settings.fade_seconds);
   const [fallbackTitle, setFallbackTitle] = useState(typeof state.settings.fallback_title === 'string' ? state.settings.fallback_title : '');
   const [fallbackSet, setFallbackSet] = useState(Boolean(state.settings.fallback_file));
   const [savingFallback, setSavingFallback] = useState(false);
   const fallbackFileRef = useRef<HTMLInputElement | null>(null);
+  const [collectionBusy, setCollectionBusy] = useState(false);
+  const [collectionInfo, setCollectionInfo] = useState<string | null>(null);
+  const [localizedUi, setLocalizedUi] = useState(state.settings.localized !== false);
+
+  const onLocalizedToggle = (checked: boolean) => {
+    setLocalizedUi(checked);
+    state.settings.localized = checked;
+    setLocalizationEnabled(checked);
+    void setBackendSetting('localized', checked).catch(e => warn('save localized failed', e));
+    onUiRefresh();
+  };
+
+  const onExportCollection = async () => {
+    setCollectionBusy(true);
+    try {
+      const parse = (raw: unknown) => (typeof raw === 'string' ? JSON.parse(raw) : raw) as { ok?: boolean; path?: string; files?: number; error?: string };
+      const r = parse(await exportCollection());
+      if (r?.ok) setCollectionInfo(t('Saved {files} files to {path}', { files: r.files ?? 0, path: r.path ?? '' }));
+      else if (r?.error === 'nothing_to_export') setCollectionInfo(t('Nothing to export yet.'));
+      else setCollectionInfo(t('Export failed: {error}', { error: r?.error ?? 'unknown' }));
+    } catch (e) {
+      warn('export collection failed', e);
+      setCollectionInfo(t('Export failed.'));
+    } finally {
+      setCollectionBusy(false);
+    }
+  };
+
+  const onImportCollection = async () => {
+    setCollectionBusy(true);
+    try {
+      const parse = (raw: unknown) => (typeof raw === 'string' ? JSON.parse(raw) : raw) as { ok?: boolean; files?: number; error?: string };
+      const r = parse(await importCollection());
+      if (r?.ok) {
+        setCollectionInfo(t('Imported {files} files.', { files: r.files ?? 0 }));
+        const raw = await getBackendSettings();
+        const st = typeof raw === 'string' ? JSON.parse(raw) : raw;
+        if (st && typeof st === 'object') {
+          state.settings = { ...state.settings, ...st };
+          setFallbackTitle(typeof state.settings.fallback_title === 'string' ? state.settings.fallback_title : '');
+          setFallbackSet(Boolean(state.settings.fallback_file));
+        }
+      } else if (r?.error === 'no_collection_file') {
+        setCollectionInfo(t('Put game-theme-song-collection.gtscollection into the backup folder first.'));
+      } else {
+        setCollectionInfo(t('Import failed: {error}', { error: r?.error ?? 'unknown' }));
+      }
+    } catch (e) {
+      warn('import collection failed', e);
+      setCollectionInfo('Import failed.');
+    } finally {
+      setCollectionBusy(false);
+    }
+  };
 
   const onFallbackPicked = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -312,8 +369,11 @@ function SettingsTab(): React.JSX.Element {
           setStopOnLaunch(state.settings.stop_on_launch);
           setManualSearch(state.settings.manual_search);
           setConfirmDl(state.settings.confirm_before_download);
+          setFadeSec(state.settings.fade_seconds);
           setFallbackTitle(typeof state.settings.fallback_title === 'string' ? state.settings.fallback_title : '');
           setFallbackSet(Boolean(state.settings.fallback_file));
+          setLocalizedUi(state.settings.localized !== false);
+          setLocalizationEnabled(state.settings.localized !== false);
           const a = getAudioEl();
           if (a) a.volume = state.settings.volume;
         }
@@ -328,6 +388,13 @@ function SettingsTab(): React.JSX.Element {
     void setBackendSetting('volume', vol).catch(e => warn('save volume failed', e));
     const a = getAudioEl();
     if (a && !a.paused) a.volume = vol;
+  };
+
+  const onFade = (sec: number) => {
+    const v = Math.max(0, Math.min(5, Math.round(sec * 2) / 2));
+    setFadeSec(v);
+    state.settings.fade_seconds = v;
+    void setBackendSetting('fade_seconds', v).catch(e => warn('save fade failed', e));
   };
 
   const onLoop = (checked: boolean) => {
@@ -365,22 +432,24 @@ function SettingsTab(): React.JSX.Element {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '16px', overflowY: 'auto', flex: 1, minHeight: 0 }}>
-      <SliderField label="Music volume" description={percent > 0 ? 'Background theme music volume.' : 'Theme music is muted.'} value={percent} min={0} max={100} step={1} showValue editableValue valueSuffix="%" onChange={onSlider} />
-      <SliderField label="Song length limit" description={maxSec > 0 ? (loop ? `The song restarts after ${formatLimit(maxSec)}.` : `The song stops after ${formatLimit(maxSec)}.`) : 'The full song plays.'} value={maxSec} min={0} max={300} step={5} showValue editableValue valueSuffix="s" onChange={onLimit} />
-      <ToggleField label="Loop song" description={loop ? 'The theme song repeats while you stay on the game page.' : 'The theme song plays once and stops.'} checked={loop} onChange={onLoop} />
-      <ToggleField label="Manual song search" description={manualSearch ? 'When a theme is found, use the skip button to pick a different song.' : 'Classic mode — just play the first theme found, no skip button.'} checked={manualSearch} onChange={onManualSearch} />
-      <ToggleField label="Keep songs only after keeping" description={confirmDl ? 'A found song is deleted if you leave the page without keeping it.' : 'Every found song stays in the download cache automatically.'} checked={confirmDl} onChange={onConfirmDl} />
-      <ToggleField label="Stop on game launch" description={stopOnLaunch ? 'Theme music stops when you launch a game.' : 'Theme music keeps playing when a game starts.'} checked={stopOnLaunch} onChange={onStopOnLaunch} />
+      <SliderField label={t("Music volume")} description={percent > 0 ? t('Background theme music volume.') : t('Theme music is muted.')} value={percent} min={0} max={100} step={1} showValue editableValue valueSuffix="%" onChange={onSlider} />
+      <SliderField label={t("Fade duration")} description={fadeSec > 0 ? t('Music fades in and out over {sec}s when switching or leaving games.', { sec: fadeSec }) : t('Music switches instantly with no fade.')} value={fadeSec} min={0} max={5} step={0.5} showValue valueSuffix="s" onChange={onFade} />
+      <SliderField label={t("Song length limit")} description={maxSec > 0 ? (loop ? `The song restarts after ${formatLimit(maxSec)}.` : `The song stops after ${formatLimit(maxSec)}.`) : t('The full song plays.')} value={maxSec} min={0} max={300} step={5} showValue editableValue valueSuffix="s" onChange={onLimit} />
+      <ToggleField label={t("Loop song")} description={loop ? t('The theme song repeats while you stay on the game page.') : t('The theme song plays once and stops.')} checked={loop} onChange={onLoop} />
+      <ToggleField label={t("Manual song search")} description={manualSearch ? t('When a theme is found, use the skip button to pick a different song.') : t('Classic mode — just play the first theme found, no skip button.')} checked={manualSearch} onChange={onManualSearch} />
+      <ToggleField label={t("Keep songs only after keeping")} description={confirmDl ? t('A found song is deleted if you leave the page without keeping it.') : t('Every found song stays in the download cache automatically.')} checked={confirmDl} onChange={onConfirmDl} />
+      <ToggleField label={t("Stop on game launch")} description={stopOnLaunch ? t('Theme music stops when you launch a game.') : t('Theme music keeps playing when a game starts.')} checked={stopOnLaunch} onChange={onStopOnLaunch} />
+      <ToggleField label={t('Interface language')} description={localizedUi ? t('The plugin uses your Steam language.') : t('The plugin interface stays in English.')} checked={localizedUi} onChange={onLocalizedToggle} />
       <div style={{ paddingTop: '8px' }}>
-        <div style={{ fontSize: '14px', fontWeight: 600 }}>Default song</div>
+        <div style={{ fontSize: '14px', fontWeight: 600 }}>{t('Default song')}</div>
         <div style={{ fontSize: '12px', color: 'var(--secondary-text-color, rgba(255,255,255,0.5))' }}>
           {fallbackSet
-            ? `Plays for games with no found theme. Current: ${fallbackTitle}`
-            : 'Plays for games where no theme could be found.'}
+            ? t('Plays for games with no found theme. Current: {title}', { title: fallbackTitle })
+            : t('Plays for games where no theme could be found.')}
         </div>
         <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
           <DialogButtonSecondary disabled={savingFallback} onClick={() => fallbackFileRef.current?.click()}>
-            {savingFallback ? 'Saving…' : fallbackSet ? 'Replace' : 'Choose file'}
+            {savingFallback ? t('Saving…') : fallbackSet ? t('Replace') : t('Choose file')}
           </DialogButtonSecondary>
           {fallbackSet && (
             <DialogButtonSecondary disabled={savingFallback} onClick={() => void onFallbackClear()}>
@@ -389,6 +458,16 @@ function SettingsTab(): React.JSX.Element {
           )}
         </div>
         <input ref={fallbackFileRef} type="file" accept={ACCEPT_EXTS} hidden onChange={(e) => void onFallbackPicked(e)} />
+      </div>
+      <div style={{ paddingTop: '8px' }}>
+        <div style={{ fontSize: '14px', fontWeight: 600 }}>{t('Collection backup')}</div>
+        <div style={{ fontSize: '12px', color: 'var(--secondary-text-color, rgba(255,255,255,0.5))' }}>
+          {collectionInfo ?? t('Export custom tracks, default song and settings into one file, or import one back.')}
+        </div>
+        <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
+          <DialogButtonSecondary disabled={collectionBusy} onClick={() => void onExportCollection()}>{t('Export')}</DialogButtonSecondary>
+          <DialogButtonSecondary disabled={collectionBusy} onClick={() => void onImportCollection()}>{t('Import')}</DialogButtonSecondary>
+        </div>
       </div>
     </div>
   );
@@ -405,6 +484,7 @@ export const MainPopupContent: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabId>('nowplaying');
   const [customCount, setCustomCount] = useState<number | null>(getCustomCount());
   const [cacheCount, setCacheCount] = useState<number | null>(null);
+  const [uiTick, setUiTick] = useState(0);
 
   useEffect(() => subscribeCustomCount(setCustomCount), []);
   useEffect(() => subscribeCacheInfo((info: CacheInfo) => setCacheCount(info.count)), []);
@@ -435,6 +515,7 @@ export const MainPopupContent: React.FC = () => {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+      <div key={uiTick} style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
       <div style={{ display: 'flex', gap: '4px', padding: '8px 16px 0', flexShrink: 0, WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
         {TABS.map((tab) => (
           <DialogButton
@@ -443,7 +524,7 @@ export const MainPopupContent: React.FC = () => {
             onClick={() => setActiveTab(tab.id)}
           >
             {tab.icon}
-            {tab.label}
+            {t(tab.label)}
             {tab.id === 'library' && customCount != null && customCount > 0 && (
               <span className="gts-tab-count">{customCount}</span>
             )}
@@ -454,10 +535,13 @@ export const MainPopupContent: React.FC = () => {
         ))}
       </div>
       <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-        {activeTab === 'nowplaying' && <NowPlayingTab />}
-        {activeTab === 'settings' && <SettingsTab />}
-        {activeTab === 'cache' && <CacheModalContent />}
-        {activeTab === 'library' && <LibraryModalContent onChanged={(map) => setGlobalCustomCount(Object.keys(map).length)} />}
+        <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+          {activeTab === 'nowplaying' && <NowPlayingTab />}
+          {activeTab === 'settings' && <SettingsTab onUiRefresh={() => setUiTick((v) => v + 1)} />}
+          {activeTab === 'cache' && <CacheModalContent />}
+          {activeTab === 'library' && <LibraryModalContent onChanged={(map) => setGlobalCustomCount(Object.keys(map).length)} />}
+        </div>
+      </div>
       </div>
     </div>
   );
