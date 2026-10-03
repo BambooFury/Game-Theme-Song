@@ -77,7 +77,7 @@ const GameRow: React.FC<GameRowProps> = ({ app, customTitle, busy, ignored, curr
           onClick={() => onSet(app)}
         >
           {busy
-            ? <span>Saving…</span>
+            ? <span>{t('Saving…')}</span>
             : (
               <>
                 <MdUploadFile size={15} />
@@ -218,7 +218,7 @@ export const LibraryModalContent: React.FC<LibraryModalProps> = ({ onChanged }) 
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', padding: '16px 16px 12px', flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ fontSize: '15px', fontWeight: 700, color: 'var(--main-text-color, #ffffff)' }}>Custom game music</span>
+          <span style={{ fontSize: '15px', fontWeight: 700, color: 'var(--main-text-color, #ffffff)' }}>{t('Custom game music')}</span>
           {customCount > 0 && <span className="gts-tab-count">{customCount}</span>}
         </div>
         <div style={{ fontSize: '12px', color: 'var(--secondary-text-color, rgba(255,255,255,0.5))' }}>Pick a personal track that plays before automatic search.</div>
@@ -237,12 +237,12 @@ export const LibraryModalContent: React.FC<LibraryModalProps> = ({ onChanged }) 
 
       <div style={LIST_SCROLL}>
         {apps === null ? (
-          <EmptyState icon={<MdHourglassEmpty size={28} style={{ color: '#67c1f5', opacity: 0.7 }} />} title="Loading your library" body="Reading your installed games and custom tracks…" />
+          <EmptyState icon={<MdHourglassEmpty size={28} style={{ color: '#67c1f5', opacity: 0.7 }} />} title={t("Loading your library")} body={t("Reading your installed games and custom tracks…")} />
         ) : shown.length === 0 ? (
           isSearching ? (
             <EmptyState icon={<MdSearchOff size={28} style={{ color: '#67c1f5', opacity: 0.7 }} />} title={t('No games match “{query}”', { query: query.trim() })} body="Try a different name, or turn on software and tools." />
           ) : (
-            <EmptyState icon={<MdSportsEsports size={28} style={{ color: '#67c1f5', opacity: 0.7 }} />} title="No games to show" body="Install a game, or turn on software and tools to see more." />
+            <EmptyState icon={<MdSportsEsports size={28} style={{ color: '#67c1f5', opacity: 0.7 }} />} title={t("No games to show")} body={t("Install a game, or turn on software and tools to see more.")} />
           )
         ) : (
           shown.map((app) => (

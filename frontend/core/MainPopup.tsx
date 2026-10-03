@@ -164,7 +164,7 @@ function NowPlayingTab(): React.JSX.Element {
           <div style={{ width: '72px', height: '72px', borderRadius: '50%', background: 'rgba(103,193,245,0.1)', border: '1px solid rgba(103,193,245,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <MdSportsEsports size={36} style={{ color: '#67c1f5', opacity: 0.7 }} />
           </div>
-          <div style={{ fontSize: '17px', fontWeight: 700, color: 'var(--main-text-color, #ffffff)' }}>No game open</div>
+          <div style={{ fontSize: '17px', fontWeight: 700, color: 'var(--main-text-color, #ffffff)' }}>{t('No game open')}</div>
           <div style={{ fontSize: '13px', lineHeight: 1.6, color: 'var(--secondary-text-color, rgba(255,255,255,0.5))', maxWidth: '320px' }}>Open a game page in your library to hear its theme music here.</div>
         </div>
       ) : searching ? (
@@ -172,8 +172,8 @@ function NowPlayingTab(): React.JSX.Element {
           <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: 'rgba(103,193,245,0.1)', border: '1px solid rgba(103,193,245,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <MdSearch size={28} style={{ color: '#67c1f5', opacity: 0.7 }} />
           </div>
-          <div style={{ fontSize: '15px', fontWeight: 600, color: 'var(--main-text-color, #fff)' }}>Searching for theme music</div>
-          <div style={{ fontSize: '12px', color: 'var(--secondary-text-color, rgba(255,255,255,0.5))' }}>Looking for a track for this game…</div>
+          <div style={{ fontSize: '15px', fontWeight: 600, color: 'var(--main-text-color, #fff)' }}>{t('Searching for theme music…')}</div>
+          <div style={{ fontSize: '12px', color: 'var(--secondary-text-color, rgba(255,255,255,0.5))' }}>{t('Looking for a track for this game…')}</div>
         </div>
       ) : (
         <DialogBody>
@@ -429,7 +429,7 @@ function SettingsTab(): React.JSX.Element {
       <ToggleField label={t("Keep songs only after keeping")} description={confirmDl ? t('A found song is deleted if you leave the page without keeping it.') : t('Every found song stays in the download cache automatically.')} checked={confirmDl} onChange={onConfirmDl} />
       <ToggleField label={t("Stop on game launch")} description={stopOnLaunch ? t('Theme music stops when you launch a game.') : t('Theme music keeps playing when a game starts.')} checked={stopOnLaunch} onChange={onStopOnLaunch} />
       <div style={{ paddingTop: '8px' }}>
-        <div style={{ fontSize: '14px', fontWeight: 600 }}>Default song</div>
+        <div style={{ fontSize: '14px', fontWeight: 600 }}>{t('Default song')}</div>
         <div style={{ fontSize: '12px', color: 'var(--secondary-text-color, rgba(255,255,255,0.5))' }}>
           {fallbackSet
             ? t('Plays for games with no found theme. Current: {title}', { title: fallbackTitle })
@@ -448,13 +448,13 @@ function SettingsTab(): React.JSX.Element {
         <input ref={fallbackFileRef} type="file" accept={ACCEPT_EXTS} hidden onChange={(e) => void onFallbackPicked(e)} />
       </div>
       <div style={{ paddingTop: '8px' }}>
-        <div style={{ fontSize: '14px', fontWeight: 600 }}>Collection backup</div>
+        <div style={{ fontSize: '14px', fontWeight: 600 }}>{t('Collection backup')}</div>
         <div style={{ fontSize: '12px', color: 'var(--secondary-text-color, rgba(255,255,255,0.5))' }}>
           {collectionInfo ?? t('Export custom tracks, default song and settings into one file, or import one back.')}
         </div>
         <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
-          <DialogButtonSecondary disabled={collectionBusy} onClick={() => void onExportCollection()}>Export</DialogButtonSecondary>
-          <DialogButtonSecondary disabled={collectionBusy} onClick={() => void onImportCollection()}>Import</DialogButtonSecondary>
+          <DialogButtonSecondary disabled={collectionBusy} onClick={() => void onExportCollection()}>{t('Export')}</DialogButtonSecondary>
+          <DialogButtonSecondary disabled={collectionBusy} onClick={() => void onImportCollection()}>{t('Import')}</DialogButtonSecondary>
         </div>
       </div>
     </div>

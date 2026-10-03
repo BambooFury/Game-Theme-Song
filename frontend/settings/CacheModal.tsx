@@ -114,14 +114,14 @@ export const CacheModalContent: React.FC = () => {
   const totalBytes = (items ?? []).reduce((total, item) => total + item.bytes, 0);
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, padding: '16px' }}>
-      <DialogHeader>Downloaded music</DialogHeader>
+      <DialogHeader>{t('Downloaded music')}</DialogHeader>
       <DialogBody>
         <DialogBodyText>{items?.length ? t('{tracks} tracks · {size} on disk', { tracks: items.length, size: bytesToMegabytes(totalBytes) }) : t('Nothing downloaded yet.')}</DialogBodyText>
         {(items?.length ?? 0) > 0 && <TextField label={t("Search tracks")} value={query} onChange={(event) => setQuery(event.target.value)} />}
         {error && <DialogBodyText>{error}</DialogBodyText>}
         <div style={LIST_SCROLL}>
-          {items === null && <DialogBodyText>Loading…</DialogBodyText>}
-          {items !== null && items.length === 0 && <DialogBodyText>Auto-downloaded themes will appear here.</DialogBodyText>}
+          {items === null && <DialogBodyText>{t('Loading…')}</DialogBodyText>}
+          {items !== null && items.length === 0 && <DialogBodyText>{t('Auto-downloaded themes will appear here.')}</DialogBodyText>}
           {items !== null && items.length > 0 && visible.length === 0 && <DialogBodyText>No tracks match “{query}”.</DialogBodyText>}
           {visible.map((item) => <CacheRow key={item.appid} item={item} busy={busyId === item.appid} onDelete={onDelete} />)}
         </div>
