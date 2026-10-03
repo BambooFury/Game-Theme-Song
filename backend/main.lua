@@ -569,6 +569,8 @@ local function score_candidate(c, game_name)
         words = words + 1
         if title:find(" " .. w .. " ", 1, true) then hits = hits + 1 end
     end
+    c.words = words
+    c.hits = hits
     if words > 0 then
         score = score + math.floor(60 * hits / words)
         if hits == words then score = score + 40 end
@@ -1176,7 +1178,8 @@ local function sc_resolve(game_name, key, exclude_set, dl_base)
     local tried = 0
     for _, c in ipairs(candidates) do
         if tried >= SC_MAX_TRIES or (c.score or 0) < SC_MIN_SCORE then break end
-        if not (c.exact and (c.start or c.theme)) then break end
+        local confident = c.exact or ((c.words or 0) > 0 and (c.hits or 0) / c.words >= 0.6)
+        if not (confident and c.theme) then break end
         if not is_excluded(exclude_set, c.title) then
             tried = tried + 1
             local sep = c.stream_api:find("?", 1, true) and "&" or "?"
