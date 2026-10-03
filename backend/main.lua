@@ -1472,6 +1472,12 @@ local function restore_custom_backup()
             custom_list_cache = nil
         end
     end
+    local fb = settings.fallback_file
+    if type(fb) == "string" and fb ~= "" then
+        local src = join(CUSTOM_BACKUP_DIR, fb)
+        local dst = join(AUDIO_DIR, fb)
+        if fs.exists(src) and not fs.exists(dst) then copy_file(src, dst) end
+    end
     sync_custom_backup()
 end
 

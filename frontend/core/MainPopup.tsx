@@ -139,7 +139,9 @@ function NowPlayingTab(): React.JSX.Element {
       ? `Playing: ${ctx.title ?? 'theme music'}`
       : mode === 'ready'
         ? `Ready: ${ctx.title ?? 'theme music'}`
-        : 'No theme found for this game';
+        : ctx.title
+          ? `Stopped: ${ctx.title}`
+          : 'No theme found for this game';
 
   const pct = showProgress && duration > 0 ? Math.min(100, (progress / duration) * 100) : 0;
   const timeLabel = showProgress && duration > 0
