@@ -3,7 +3,7 @@
   "name": "game-theme-song",
   "common_name": "Game Theme Song",
   "description": "Plays the game's theme music in the background when you open a game page in your Steam library.",
-  "version": "2.1.1",
+  "version": "2.2.0",
   "backendType": "lua",
   "useBackend": true,
   "include": [
