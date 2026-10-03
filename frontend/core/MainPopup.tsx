@@ -65,52 +65,6 @@ function NowPlayingTab(): React.JSX.Element {
   const customFileRef = useRef<HTMLInputElement | null>(null);
   const [savingFallback, setSavingFallback] = useState(false);
   const fallbackFileRef = useRef<HTMLInputElement | null>(null);
-  const [collectionBusy, setCollectionBusy] = useState(false);
-  const [collectionInfo, setCollectionInfo] = useState<string | null>(null);
-
-  const onExportCollection = async () => {
-    setCollectionBusy(true);
-    try {
-      const parse = (raw: unknown) => (typeof raw === 'string' ? JSON.parse(raw) : raw) as { ok?: boolean; path?: string; files?: number; error?: string };
-      const r = parse(await exportCollection());
-      if (r?.ok) setCollectionInfo(`Saved ${r.files} files to ${r.path}`);
-      else if (r?.error === 'nothing_to_export') setCollectionInfo('Nothing to export yet.');
-      else setCollectionInfo(`Export failed: ${r?.error ?? 'unknown'}`);
-    } catch (e) {
-      warn('export collection failed', e);
-      setCollectionInfo('Export failed.');
-    } finally {
-      setCollectionBusy(false);
-    }
-  };
-
-  const onImportCollection = async () => {
-    setCollectionBusy(true);
-    try {
-      const parse = (raw: unknown) => (typeof raw === 'string' ? JSON.parse(raw) : raw) as { ok?: boolean; files?: number; error?: string };
-      const r = parse(await importCollection());
-      if (r?.ok) {
-        setCollectionInfo(`Imported ${r.files} files.`);
-        const raw = await getBackendSettings();
-        const st = typeof raw === 'string' ? JSON.parse(raw) : raw;
-        if (st && typeof st === 'object') {
-          state.settings = { ...state.settings, ...st };
-          setFallbackTitle(typeof state.settings.fallback_title === 'string' ? state.settings.fallback_title : '');
-          setFallbackSet(Boolean(state.settings.fallback_file));
-        }
-      } else if (r?.error === 'no_collection_file') {
-        setCollectionInfo('Put game-theme-song-collection.gtscollection into the backup folder first.');
-      } else {
-        setCollectionInfo(`Import failed: ${r?.error ?? 'unknown'}`);
-      }
-    } catch (e) {
-      warn('import collection failed', e);
-      setCollectionInfo('Import failed.');
-    } finally {
-      setCollectionBusy(false);
-    }
-  };
-
   const onFallbackPicked = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     event.target.value = '';
