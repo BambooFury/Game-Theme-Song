@@ -515,6 +515,7 @@ export const MainPopupContent: React.FC = () => {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+      <div key={uiTick} style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
       <div style={{ display: 'flex', gap: '4px', padding: '8px 16px 0', flexShrink: 0, WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
         {TABS.map((tab) => (
           <DialogButton
@@ -534,12 +535,13 @@ export const MainPopupContent: React.FC = () => {
         ))}
       </div>
       <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-        <div key={uiTick} style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
           {activeTab === 'nowplaying' && <NowPlayingTab />}
           {activeTab === 'settings' && <SettingsTab onUiRefresh={() => setUiTick((v) => v + 1)} />}
           {activeTab === 'cache' && <CacheModalContent />}
           {activeTab === 'library' && <LibraryModalContent onChanged={(map) => setGlobalCustomCount(Object.keys(map).length)} />}
         </div>
+      </div>
       </div>
     </div>
   );
