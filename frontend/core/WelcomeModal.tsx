@@ -1,4 +1,5 @@
 import { ConfirmModal, DialogBodyText, showModal } from 'millennium';
+import { t } from './i18n';
 
 const SEEN_FLAG = 'gts_welcomed_v6';
 
@@ -15,17 +16,17 @@ function showWelcome(): void {
   showModal(
     <ConfirmModal
       bAlertDialog
-      strTitle="Welcome to Game Theme Song!"
-      strOKButtonText="Got it — turn up the music!"
+      strTitle={t("Welcome to Game Theme Song!")}
+      strOKButtonText={t("Got it — turn up the music!")}
       strDescription={
         <>
-          <DialogBodyText>Your Steam library just got a soundtrack — every game page now plays its own theme.</DialogBodyText>
-          <DialogBodyText>Look for the music note button. On any game page in your Library, a small music note button appears — click it anytime to control playback and settings.</DialogBodyText>
-          <DialogBodyText>Plays automatically. The theme song fades in softly in the background and fades out when you leave the page or switch games.</DialogBodyText>
-          <DialogBodyText>Set your own music. In the popup's Settings tab, pick Custom game music to choose your own audio file for any game — it always plays before the auto search.</DialogBodyText>
-          <DialogBodyText>Faster every next visit. The first play for a game can take a few seconds while a fresh audio link is found. After that the track is cached and starts almost instantly.</DialogBodyText>
-          <DialogBodyText>Tune it your way. Open the popup's Settings tab to set the volume, loop the song, or cap how long each theme plays.</DialogBodyText>
-          <DialogBodyText>This message won't appear again.</DialogBodyText>
+          <DialogBodyText>В вашей библиотеке Steam появился саундтрек — каждая страница игры теперь играет свою тему.</DialogBodyText>
+          <DialogBodyText>Найдите кнопку с нотой. На любой странице игры в библиотеке появилась маленькая кнопка — нажимайте её, чтобы управлять воспроизведением и настройками.</DialogBodyText>
+          <DialogBodyText>Автовоспроизведение. Музыка мягко нарастает на фоне и затухает, когда вы уходите со страницы или переключаете игру.</DialogBodyText>
+          <DialogBodyText>Своя музыка. В табе настроек попапа выберите «Своя музыка», чтобы задать свой аудиофил для любой игры — он всегда играет раньше автопоиска.</DialogBodyText>
+          <DialogBodyText>Быстрее с каждым разом. Первое воспроизведение может занять несколько секунд, пока находится аудио. После этого трек кэшируется и стартует почти мгновенно.</DialogBodyText>
+          <DialogBodyText>Настройте под себя. В табе настроек попапа задайте громкость, повтор песни или ограничение её длительности.</DialogBodyText>
+          <DialogBodyText>Это сообщение больше не появится.</DialogBodyText>
         </>
       }
     />,

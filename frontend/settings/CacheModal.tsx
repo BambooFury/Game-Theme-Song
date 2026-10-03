@@ -6,6 +6,7 @@ import { clearAudioCache, clearCacheFor, getCacheList } from '../core/api';
 import { getCurrentAppId, getPendingConfirmAppId, resetPlayback, setGlobalCacheInfo, stopAudio, subscribeCacheList } from '../core/engine';
 import type { CacheItem } from '../core/types';
 import { getLibraryApps } from './library';
+import { t } from '../core/i18n';
 
 const LIST_SCROLL: React.CSSProperties = { flex: 1, minHeight: 0, overflowY: 'auto' };
 const bytesToMegabytes = (bytes: number) => `${(bytes / 1048576).toFixed(1)} MB`;
@@ -13,7 +14,7 @@ const bytesToMegabytes = (bytes: number) => `${(bytes / 1048576).toFixed(1)} MB`
 const CacheRow: React.FC<{ item: CacheItem; busy: boolean; onDelete: (item: CacheItem) => void }> = ({ item, busy, onDelete }) => (
   <Field label={item.name} description={`${item.title ? `${item.title} · ` : ''}${bytesToMegabytes(item.bytes)}`}>
     <DialogButtonSecondary disabled={busy} onClick={() => onDelete(item)}>
-      {busy ? 'Removing…' : 'Remove'}
+      {busy ? t('Removing…') : t('Remove')}
     </DialogButtonSecondary>
   </Field>
 );
@@ -37,7 +38,7 @@ export const CacheModalContent: React.FC = () => {
         const raw = await getCacheList();
         const response = typeof raw === 'string' ? JSON.parse(raw) : raw;
         if (!response?.ok || !response.items) {
-          if (response?.error === 'busy') setError('Search is in progress — try again in a moment.');
+          if (response?.error === 'busy') setError(t('Search is in progress — try again in a moment.'));
           setItems([]);
           if (response?.error !== 'busy') broadcast([]);
           return;
@@ -68,7 +69,7 @@ export const CacheModalContent: React.FC = () => {
       const raw = await clearCacheFor(item.appid);
       const response = typeof raw === 'string' ? JSON.parse(raw) : raw;
       if (!response?.ok) {
-        setError('Could not remove this track.');
+        setError(t('Could not remove this track.'));
         return;
       }
       if (getCurrentAppId() === item.appid) {
@@ -82,7 +83,7 @@ export const CacheModalContent: React.FC = () => {
       });
     } catch (e) {
       warn('clearCacheFor failed', e);
-      setError('Could not remove this track.');
+      setError(t('Could not remove this track.'));
     } finally {
       setBusyId(null);
     }
@@ -99,7 +100,7 @@ export const CacheModalContent: React.FC = () => {
       broadcast([]);
     } catch (e) {
       warn('clearAudioCache failed', e);
-      setError('Could not clear downloaded music.');
+      setError(t('Could not clear downloaded music.'));
     } finally {
       setClearingAll(false);
     }
@@ -115,8 +116,8 @@ export const CacheModalContent: React.FC = () => {
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, padding: '16px' }}>
       <DialogHeader>Downloaded music</DialogHeader>
       <DialogBody>
-        <DialogBodyText>{items?.length ? `${items.length} track${items.length === 1 ? '' : 's'} · ${bytesToMegabytes(totalBytes)} on disk` : 'Nothing downloaded yet.'}</DialogBodyText>
-        {(items?.length ?? 0) > 0 && <TextField label="Search tracks" value={query} onChange={(event) => setQuery(event.target.value)} />}
+        <DialogBodyText>{items?.length ? t('{tracks} tracks · {size} on disk', { tracks: items.length, size: bytesToMegabytes(totalBytes) }) : t('Nothing downloaded yet.')}</DialogBodyText>
+        {(items?.length ?? 0) > 0 && <TextField label={t("Search tracks")} value={query} onChange={(event) => setQuery(event.target.value)} />}
         {error && <DialogBodyText>{error}</DialogBodyText>}
         <div style={LIST_SCROLL}>
           {items === null && <DialogBodyText>Loading…</DialogBodyText>}
@@ -124,7 +125,7 @@ export const CacheModalContent: React.FC = () => {
           {items !== null && items.length > 0 && visible.length === 0 && <DialogBodyText>No tracks match “{query}”.</DialogBodyText>}
           {visible.map((item) => <CacheRow key={item.appid} item={item} busy={busyId === item.appid} onDelete={onDelete} />)}
         </div>
-        {(items?.length ?? 0) > 0 && <DialogButton disabled={clearingAll} onClick={() => void onClearAll()}>{clearingAll ? 'Clearing…' : 'Clear all downloaded music'}</DialogButton>}
+        {(items?.length ?? 0) > 0 && <DialogButton disabled={clearingAll} onClick={() => void onClearAll()}>{clearingAll ? t('Clearing…') : t('Clear all downloaded music')}</DialogButton>}
       </DialogBody>
     </div>
   );
