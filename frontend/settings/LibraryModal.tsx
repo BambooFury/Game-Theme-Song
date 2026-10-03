@@ -221,7 +221,7 @@ export const LibraryModalContent: React.FC<LibraryModalProps> = ({ onChanged }) 
           <span style={{ fontSize: '15px', fontWeight: 700, color: 'var(--main-text-color, #ffffff)' }}>{t('Custom game music')}</span>
           {customCount > 0 && <span className="gts-tab-count">{customCount}</span>}
         </div>
-        <div style={{ fontSize: '12px', color: 'var(--secondary-text-color, rgba(255,255,255,0.5))' }}>Pick a personal track that plays before automatic search.</div>
+        <div style={{ fontSize: '12px', color: 'var(--secondary-text-color, rgba(255,255,255,0.5))' }}>{t('Pick a personal track that plays before automatic search.')}</div>
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', padding: '0 16px 8px', gap: '4px', flexShrink: 0 }}>
