@@ -1650,6 +1650,123 @@ function clear_fallback_music()
 end
 
 
+local COLLECTION_EXT = ".gtscollection"
+local COLLECTION_NL = string.char(10)
+local COLLECTION_NAME = "game-theme-song-collection" .. COLLECTION_EXT
+local COLLECTION_AUDIO_EXTS = { mp3 = true, ogg = true, oga = true, opus = true, m4a = true, mp4 = true, aac = true, wav = true, flac = true, webm = true }
+
+local function copy_file_chunked(src, dst)
+    local fin = io.open(src, "rb")
+    if not fin then return false end
+    local fout = io.open(dst, "wb")
+    if not fout then fin:close() return false end
+    while true do
+        local chunk = fin:read(262144)
+        if not chunk then break end
+        fout:write(chunk)
+    end
+    fin:close()
+    fout:close()
+    return true
+end
+
+local function collection_files()
+    local files = {}
+    if fs and fs.list then
+        local entries = fs.list(CUSTOM_BACKUP_DIR)
+        if type(entries) == "table" then
+            for _, e in ipairs(entries) do
+                local name = tostring(e.name or "")
+                local lower = name:lower()
+                if e.is_file and (lower == "custom.json" or lower == "settings.json" or COLLECTION_AUDIO_EXTS[lower:match("%.(%w+)$") or ""]) then
+                    files[#files + 1] = { name = name, size = tonumber(e.size) or file_size(join(CUSTOM_BACKUP_DIR, name)) }
+                end
+            end
+        end
+    end
+    table.sort(files, function(a, b) return a.name < b.name end)
+    return files
+end
+
+---@ffi
+---Pack the custom collection folder into a single portable file.
+---@return string JSON { ok, path, files }
+function export_collection()
+    return run_io("export_collection", function()
+        if not fs then return json.encode({ ok = false, error = "fs_unsupported" }) end
+        pcall(fs.create_directories, CUSTOM_BACKUP_DIR)
+        local files = {}
+        for _, f in ipairs(collection_files()) do
+            if f.name ~= COLLECTION_NAME then files[#files + 1] = f end
+        end
+        if #files == 0 then return json.encode({ ok = false, error = "nothing_to_export" }) end
+        local out_path = join(CUSTOM_BACKUP_DIR, COLLECTION_NAME)
+        local out = io.open(out_path, "wb")
+        if not out then return json.encode({ ok = false, error = "write_failed" }) end
+        out:write("GTSC1" .. COLLECTION_NL)
+        out:write(json.encode({ files = files }) .. COLLECTION_NL)
+        for _, f in ipairs(files) do
+            local fin = io.open(join(CUSTOM_BACKUP_DIR, f.name), "rb")
+            if fin then
+                while true do
+                    local chunk = fin:read(262144)
+                    if not chunk then break end
+                    out:write(chunk)
+                end
+                fin:close()
+            end
+        end
+        out:close()
+        return json.encode({ ok = true, path = out_path, files = #files })
+    end)
+end
+
+---@ffi
+---Import a collection file previously written into the backup folder.
+---@return string JSON { ok, files }
+function import_collection()
+    return run_io("import_collection", function()
+        if not fs then return json.encode({ ok = false, error = "fs_unsupported" }) end
+        local src = join(CUSTOM_BACKUP_DIR, COLLECTION_NAME)
+        if not (fs.exists and fs.exists(src)) then return json.encode({ ok = false, error = "no_collection_file" }) end
+        local fin = io.open(src, "rb")
+        if not fin then return json.encode({ ok = false, error = "read_failed" }) end
+        local magic = fin:read(6)
+        if magic ~= "GTSC1" .. COLLECTION_NL then fin:close() return json.encode({ ok = false, error = "bad_format" }) end
+        local header = fin:read("*l")
+        local meta = safe_decode(header or "")
+        if type(meta) ~= "table" or type(meta.files) ~= "table" then fin:close() return json.encode({ ok = false, error = "bad_format" }) end
+        local restored = 0
+        for _, f in ipairs(meta.files) do
+            local name = tostring(f.name or "")
+            if name:find("\\", 1, true) or name:find("/", 1, true) or name:match("%.%.") then
+                -- skip unsafe names
+            else
+                local dst = join(CUSTOM_BACKUP_DIR, name)
+                local fout = io.open(dst, "wb")
+                if fout then
+                    local remaining = tonumber(f.size) or 0
+                    while remaining > 0 do
+                        local chunk = fin:read(math.min(remaining, 262144))
+                        if not chunk then break end
+                        fout:write(chunk)
+                        remaining = remaining - #chunk
+                    end
+                    fout:close()
+                    restored = restored + 1
+                end
+            end
+        end
+        fin:close()
+        pcall(function()
+            load_state()
+            restore_custom_backup()
+            custom_list_cache = nil
+        end)
+        return json.encode({ ok = true, files = restored })
+    end)
+end
+
 ---@ffi
 ---Return the current plugin settings.
 ---@return string JSON settings table

@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { DialogBody, DialogBodyText, DialogButton, DialogButtonSecondary, DialogHeader, SliderField, ToggleField } from 'millennium';
 import { MdMusicNote, MdSkipNext, MdStop, MdCheckCircle, MdSettings, MdLibraryMusic, MdDownload, MdSearch, MdSportsEsports, MdUploadFile, MdDeleteOutline } from 'react-icons/md';
 import { warn } from './log';
-import { getBackendSettings, setBackendSetting, getCacheInfo, getCustomList, clearFallbackMusic } from './api';
+import { getBackendSettings, setBackendSetting, getCacheInfo, getCustomList, clearFallbackMusic, exportCollection, importCollection } from './api';
 import { readFileBase64 } from './base64';
 import { ACCEPT_EXTS, MAX_UPLOAD_BYTES, uploadCustomMusic, uploadFallbackMusic } from '../settings/library';
 import {
@@ -65,6 +65,51 @@ function NowPlayingTab(): React.JSX.Element {
   const customFileRef = useRef<HTMLInputElement | null>(null);
   const [savingFallback, setSavingFallback] = useState(false);
   const fallbackFileRef = useRef<HTMLInputElement | null>(null);
+  const [collectionBusy, setCollectionBusy] = useState(false);
+  const [collectionInfo, setCollectionInfo] = useState<string | null>(null);
+
+  const onExportCollection = async () => {
+    setCollectionBusy(true);
+    try {
+      const parse = (raw: unknown) => (typeof raw === 'string' ? JSON.parse(raw) : raw) as { ok?: boolean; path?: string; files?: number; error?: string };
+      const r = parse(await exportCollection());
+      if (r?.ok) setCollectionInfo(`Saved ${r.files} files to ${r.path}`);
+      else if (r?.error === 'nothing_to_export') setCollectionInfo('Nothing to export yet.');
+      else setCollectionInfo(`Export failed: ${r?.error ?? 'unknown'}`);
+    } catch (e) {
+      warn('export collection failed', e);
+      setCollectionInfo('Export failed.');
+    } finally {
+      setCollectionBusy(false);
+    }
+  };
+
+  const onImportCollection = async () => {
+    setCollectionBusy(true);
+    try {
+      const parse = (raw: unknown) => (typeof raw === 'string' ? JSON.parse(raw) : raw) as { ok?: boolean; files?: number; error?: string };
+      const r = parse(await importCollection());
+      if (r?.ok) {
+        setCollectionInfo(`Imported ${r.files} files.`);
+        const raw = await getBackendSettings();
+        const st = typeof raw === 'string' ? JSON.parse(raw) : raw;
+        if (st && typeof st === 'object') {
+          state.settings = { ...state.settings, ...st };
+          setFallbackTitle(typeof state.settings.fallback_title === 'string' ? state.settings.fallback_title : '');
+          setFallbackSet(Boolean(state.settings.fallback_file));
+        }
+      } else if (r?.error === 'no_collection_file') {
+        setCollectionInfo('Put game-theme-song-collection.gtscollection into the backup folder first.');
+      } else {
+        setCollectionInfo(`Import failed: ${r?.error ?? 'unknown'}`);
+      }
+    } catch (e) {
+      warn('import collection failed', e);
+      setCollectionInfo('Import failed.');
+    } finally {
+      setCollectionBusy(false);
+    }
+  };
 
   const onFallbackPicked = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -265,6 +310,51 @@ function SettingsTab(): React.JSX.Element {
   const [fallbackSet, setFallbackSet] = useState(Boolean(state.settings.fallback_file));
   const [savingFallback, setSavingFallback] = useState(false);
   const fallbackFileRef = useRef<HTMLInputElement | null>(null);
+  const [collectionBusy, setCollectionBusy] = useState(false);
+  const [collectionInfo, setCollectionInfo] = useState<string | null>(null);
+
+  const onExportCollection = async () => {
+    setCollectionBusy(true);
+    try {
+      const parse = (raw: unknown) => (typeof raw === 'string' ? JSON.parse(raw) : raw) as { ok?: boolean; path?: string; files?: number; error?: string };
+      const r = parse(await exportCollection());
+      if (r?.ok) setCollectionInfo(`Saved ${r.files} files to ${r.path}`);
+      else if (r?.error === 'nothing_to_export') setCollectionInfo('Nothing to export yet.');
+      else setCollectionInfo(`Export failed: ${r?.error ?? 'unknown'}`);
+    } catch (e) {
+      warn('export collection failed', e);
+      setCollectionInfo('Export failed.');
+    } finally {
+      setCollectionBusy(false);
+    }
+  };
+
+  const onImportCollection = async () => {
+    setCollectionBusy(true);
+    try {
+      const parse = (raw: unknown) => (typeof raw === 'string' ? JSON.parse(raw) : raw) as { ok?: boolean; files?: number; error?: string };
+      const r = parse(await importCollection());
+      if (r?.ok) {
+        setCollectionInfo(`Imported ${r.files} files.`);
+        const raw = await getBackendSettings();
+        const st = typeof raw === 'string' ? JSON.parse(raw) : raw;
+        if (st && typeof st === 'object') {
+          state.settings = { ...state.settings, ...st };
+          setFallbackTitle(typeof state.settings.fallback_title === 'string' ? state.settings.fallback_title : '');
+          setFallbackSet(Boolean(state.settings.fallback_file));
+        }
+      } else if (r?.error === 'no_collection_file') {
+        setCollectionInfo('Put game-theme-song-collection.gtscollection into the backup folder first.');
+      } else {
+        setCollectionInfo(`Import failed: ${r?.error ?? 'unknown'}`);
+      }
+    } catch (e) {
+      warn('import collection failed', e);
+      setCollectionInfo('Import failed.');
+    } finally {
+      setCollectionBusy(false);
+    }
+  };
 
   const onFallbackPicked = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -399,6 +489,16 @@ function SettingsTab(): React.JSX.Element {
           )}
         </div>
         <input ref={fallbackFileRef} type="file" accept={ACCEPT_EXTS} hidden onChange={(e) => void onFallbackPicked(e)} />
+      </div>
+      <div style={{ paddingTop: '8px' }}>
+        <div style={{ fontSize: '14px', fontWeight: 600 }}>Collection backup</div>
+        <div style={{ fontSize: '12px', color: 'var(--secondary-text-color, rgba(255,255,255,0.5))' }}>
+          {collectionInfo ?? 'Export custom tracks, default song and settings into one file, or import one back.'}
+        </div>
+        <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
+          <DialogButtonSecondary disabled={collectionBusy} onClick={() => void onExportCollection()}>Export</DialogButtonSecondary>
+          <DialogButtonSecondary disabled={collectionBusy} onClick={() => void onImportCollection()}>Import</DialogButtonSecondary>
+        </div>
       </div>
     </div>
   );
