@@ -165,7 +165,7 @@ function NowPlayingTab(): React.JSX.Element {
             <MdSportsEsports size={36} style={{ color: '#67c1f5', opacity: 0.7 }} />
           </div>
           <div style={{ fontSize: '17px', fontWeight: 700, color: 'var(--main-text-color, #ffffff)' }}>{t('No game open')}</div>
-          <div style={{ fontSize: '13px', lineHeight: 1.6, color: 'var(--secondary-text-color, rgba(255,255,255,0.5))', maxWidth: '320px' }}>Open a game page in your library to hear its theme music here.</div>
+          <div style={{ fontSize: '13px', lineHeight: 1.6, color: 'var(--secondary-text-color, rgba(255,255,255,0.5))', maxWidth: '320px' }}>{t('Open a game page in your library to hear its theme music here.')}</div>
         </div>
       ) : searching ? (
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '14px', flex: 1, padding: '40px 0' }}>
@@ -193,7 +193,7 @@ function NowPlayingTab(): React.JSX.Element {
                   <DialogButtonSecondary disabled={false} onClick={() => void rerollCurrent()}>
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                       <MdSkipNext size={16} />
-                      Find another
+                      {t('Find another')}
                     </span>
                   </DialogButtonSecondary>
                 )}
@@ -201,21 +201,21 @@ function NowPlayingTab(): React.JSX.Element {
                   <DialogButtonSecondary onClick={() => stopAudio(0.5)}>
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                       <MdStop size={16} />
-                      Stop
+                      {t('Stop')}
                     </span>
                   </DialogButtonSecondary>
                 )}
                 <DialogButton onClick={() => acceptCurrent()}>
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                     <MdCheckCircle size={16} />
-                    Keep this song
+                    {t('Keep this song')}
                   </span>
                 </DialogButton>
               </>
             ) : playing && mode === 'ready' ? (
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: 'var(--color-online, #5dc26a)' }}>
                 <MdCheckCircle size={18} />
-                <span style={{ fontSize: '13px' }}>Song saved</span>
+                <span style={{ fontSize: '13px' }}>{t('Song saved')}</span>
               </span>
             ) : !playing && !searching ? (
               <>
@@ -223,7 +223,7 @@ function NowPlayingTab(): React.JSX.Element {
                   <DialogButtonSecondary onClick={() => rerollCurrent()}>
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                       <MdSearch size={16} />
-                      Search again
+                      {t('Search again')}
                     </span>
                   </DialogButtonSecondary>
                 )}
