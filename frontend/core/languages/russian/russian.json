@@ -112,5 +112,6 @@
   "The plugin interface stays in English.": "Интерфейс плагина остаётся английским.",
   "Open Game Theme Song": "Открыть Game Theme Song",
   "Opens the music popup - the note button does not show on this platform.": "Открывает окно музыки — на этой платформе кнопка с нотой не отображается.",
-  "Open": "Открыть"
+  "Open": "Открыть",
+  "Invalid collection file.": "Некорректный файл коллекции."
 }
