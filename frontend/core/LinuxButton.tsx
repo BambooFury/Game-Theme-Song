@@ -12,6 +12,7 @@ const NOTE_ICON =
 let inPageClass = '';
 let btnContClass = '';
 let menuBtnClass = '';
+let dotClass = '';
 let active = false;
 let mainDoc: Document | null = null;
 let watchedBrowser: unknown = null;
@@ -27,6 +28,9 @@ function resolveClasses() {
   if (!menuBtnClass) {
     try { menuBtnClass = findModule((e: any) => e.AppButtonsContainer && e.MenuButton)?.MenuButton ?? ''; } catch {}
   }
+  if (!dotClass) {
+    try { dotClass = findModule((e: any) => e.AppButtonsContainer && e.DotDotDot)?.DotDotDot ?? ''; } catch {}
+  }
 }
 
 function findMusicButton(doc: Document): Element | null {
@@ -35,7 +39,7 @@ function findMusicButton(doc: Document): Element | null {
 
 function injectButton(doc: Document): void {
   resolveClasses();
-  if (!inPageClass || !btnContClass || !menuBtnClass) return;
+  if (!inPageClass || !btnContClass || !menuBtnClass || !dotClass) return;
   if (findMusicButton(doc)) return;
 
   const host = doc.querySelector(`div.${inPageClass} div.${btnContClass}`) as HTMLElement | null;
@@ -47,6 +51,7 @@ function injectButton(doc: Document): void {
   btn.setAttribute('tabindex', '0');
   btn.title = 'Game Theme Song';
   const inner = doc.createElement('div');
+  inner.className = dotClass;
   inner.style.cssText = 'display:flex;align-items:center;justify-content:center;height:100%';
   inner.innerHTML = NOTE_ICON;
   btn.appendChild(inner);
