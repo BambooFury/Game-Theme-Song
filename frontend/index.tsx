@@ -3,6 +3,7 @@ import { definePlugin, routerHook, ButtonItem } from 'millennium';
 import { loadSettingsOnce, startPolling, registerLaunchStop, unregisterLaunchStop, loadIgnoredOnce, startFocusWatch, stopFocusWatch } from './core/engine';
 import { ManagerWindows } from './core/ManagerWindows';
 import { setupNowPlaying, removeNowPlaying } from './core/NowPlaying';
+import { setupLinuxButtonFallback, removeLinuxButtonFallback } from './core/LinuxButton';
 import { openManagerPopup } from './settings/managerPopups';
 import { t } from './core/i18n';
 
@@ -29,6 +30,7 @@ export default definePlugin(() => {
 	registerLaunchStop();
 	startFocusWatch();
 	setupNowPlaying();
+	setupLinuxButtonFallback();
 	return {
 		title: 'Game Theme Song',
 		icon: <></>,
@@ -38,6 +40,7 @@ export default definePlugin(() => {
 			unregisterLaunchStop();
 			stopFocusWatch();
 			removeNowPlaying();
+			removeLinuxButtonFallback();
 		},
 	};
 });
