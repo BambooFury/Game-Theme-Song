@@ -1245,6 +1245,8 @@ end
         mem_cache.track_mp3 = {}
         save_cache()
         resolve_busy = false
+        local fb = try_fallback()
+        if fb then return fb end
         return json.encode({ ok = false, error = "skipped_after_crash" })
     end
     write_file(RESOLVE_MARKER, key)
@@ -1284,23 +1286,27 @@ end
         end
         local dl_base = target_slot == "b" and (key .. "_b") or key
         local variants = name_variants(game_name)
-        local r = local_resolve(game_name, key, exclude_set, dl_base)
+        local ok_stage, r = pcall(local_resolve, game_name, key, exclude_set, dl_base)
+        if not ok_stage then r = nil end
         local kh_err
         if not (r and r.file) then
             for _, q in ipairs(variants) do
-                r, kh_err = khinsider_resolve(q, key, exclude_set, dl_base)
-                if r and r.file then break end
+                ok_stage, r = pcall(khinsider_resolve, q, key, exclude_set, dl_base)
+                if ok_stage and r and r.file then break end
+                r = nil
             end
         end
         local ia_err
         if not (r and r.file) then
-            r, ia_err = ia_resolve(game_name, key, exclude_set, dl_base)
+            ok_stage, r = pcall(ia_resolve, game_name, key, exclude_set, dl_base)
+            if not ok_stage then r = nil; ia_err = "ia_failed" end
         end
         if not (r and r.file) then
             local sc_err
             for _, q in ipairs(variants) do
-                r, sc_err = sc_resolve(q, key, exclude_set, dl_base)
-                if r and r.file then break end
+                ok_stage, r = pcall(sc_resolve, q, key, exclude_set, dl_base)
+                if ok_stage and r and r.file then break end
+                r = nil
             end
             if not (r and r.file) then
 local err_code = sc_err or kh_err or "not_found"
