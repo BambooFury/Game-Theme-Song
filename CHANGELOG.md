@@ -1,5 +1,63 @@
 # Changelog
 
+## [2.3.0](https://github.com/BambooFury/Game-Theme-Song/compare/v2.2.0...v2.3.0) (2026-11-06)
+
+
+### Features
+
+* import via file picker and fix button patch for new steam chunk ([797d6cd](https://github.com/BambooFury/Game-Theme-Song/commit/797d6cd281f83589c4a2e8cad4c032ef15798a83))
+* linux dom fallback for the note button ([4e5c343](https://github.com/BambooFury/Game-Theme-Song/commit/4e5c343df2a054a5f89745d6c1047c0b1b4f2884))
+
+
+### Bug Fixes
+
+* isolate resolve stages in pcalls and keep fallback after crash ([e3df212](https://github.com/BambooFury/Game-Theme-Song/commit/e3df2127a136b7b72dcb8854ab6be6263dbef7e3))
+* stream collection import in bounded slices ([6ad9fd1](https://github.com/BambooFury/Game-Theme-Song/commit/6ad9fd101dda96703829ed5cb6a5e832290f54bf))
+* use native dot wrapper for linux button hover ([8b5ada4](https://github.com/BambooFury/Game-Theme-Song/commit/8b5ada4b1e1121f9bf812174ce40f871c256d352))
+
+## [2.2.0](https://github.com/BambooFury/Game-Theme-Song/compare/v2.1.1...v2.2.0) (2026-10-03)
+
+
+### Features
+
+* add french german italian polish spanish latam schinese japanese ukrainian translations ([2401f87](https://github.com/BambooFury/Game-Theme-Song/commit/2401f8794846ca2a2c766516c2c1b2aeed89b5e0))
+* collection export and import in settings ([6eba0e5](https://github.com/BambooFury/Game-Theme-Song/commit/6eba0e5af2c6b4fcf047ace0f8acf9055bcbdae7))
+* fade duration slider in settings ([d442205](https://github.com/BambooFury/Game-Theme-Song/commit/d442205e79839267f947ff0e5e09737d8bee3470))
+* interface language toggle in settings ([d8be0fb](https://github.com/BambooFury/Game-Theme-Song/commit/d8be0fbf6a032ffee051c872d84573dff7e5abe3))
+* linux settings entry to open the music popup ([e54291d](https://github.com/BambooFury/Game-Theme-Song/commit/e54291d4153a8fe39debdf49c60443da24d7eda9))
+* localize interface to steam language with russian translations ([2869605](https://github.com/BambooFury/Game-Theme-Song/commit/28696051fcd08a4a6cc0933255f0b82993020fe5))
+* remove welcome modal ([5b75226](https://github.com/BambooFury/Game-Theme-Song/commit/5b75226eee5eae61f0903f2eb74fe667925c359b))
+
+
+### Bug Fixes
+
+* add missing export import loading translations ([50cad7f](https://github.com/BambooFury/Game-Theme-Song/commit/50cad7f5e899ddd359033fa66ad0c9e61a11beef))
+* allow word-coverage matches through soundcloud gate ([2f5b983](https://github.com/BambooFury/Game-Theme-Song/commit/2f5b9839f98df3c786b320706ed3ce63a2271e4e))
+* evaluate tab labels dynamically for language toggle ([6bd620b](https://github.com/BambooFury/Game-Theme-Song/commit/6bd620b565cc95a1188dc16f9066c2402fe18ef9))
+* localize missed strings across popup tabs ([f983ad0](https://github.com/BambooFury/Game-Theme-Song/commit/f983ad0276b259e31748b8623e2bcc5c02186cbd))
+* log missing theme warning only when no fallback is set ([da2ea43](https://github.com/BambooFury/Game-Theme-Song/commit/da2ea43ef033b14843def758b1767eac63e10ae1))
+* remove duplicated collection handlers from now playing tab ([7d92132](https://github.com/BambooFury/Game-Theme-Song/commit/7d9213226246bc00e08e623c8399703974302f49))
+* restore fallback file on boot and show stopped track status ([f6d84a9](https://github.com/BambooFury/Game-Theme-Song/commit/f6d84a9176ae7db1a1f8e586236f201f0d43e853))
+* translate remaining now playing labels ([f8d0c83](https://github.com/BambooFury/Game-Theme-Song/commit/f8d0c8334c0284fd5695a9f0dbbaae5f95a7130b))
+* ui language toggle refreshes tab labels too ([3693b9d](https://github.com/BambooFury/Game-Theme-Song/commit/3693b9d9d4d83fd18faac2a07cf47ab850ad4318))
+
+
+### Documentation
+
+* redesign readme without emojis ([be84ea6](https://github.com/BambooFury/Game-Theme-Song/commit/be84ea6a9e119786def34c0d78160e793bb2f1c7))
+
+## [2.1.1](https://github.com/BambooFury/Game-Theme-Song/compare/v2.1.0...v2.1.1) (2026-10-02)
+
+
+### Bug Fixes
+
+* add missing fallback ffi exports to api ([f0cbc56](https://github.com/BambooFury/Game-Theme-Song/commit/f0cbc56d3258adac9212b215131d01f5b28855aa))
+
+
+### Maintenance
+
+* sync release 2.1.0 ([c5477b6](https://github.com/BambooFury/Game-Theme-Song/commit/c5477b6a2294af3da8bfed66a184b5ae084e7b3b))
+
 ## [2.1.0](https://github.com/BambooFury/Game-Theme-Song/compare/v2.0.1...v2.1.0) (2026-10-02)
 
 
