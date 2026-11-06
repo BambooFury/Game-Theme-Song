@@ -1,5 +1,5 @@
 import { warn } from '../core/log';
-import { readFileBase64 } from '../core/base64';
+import { readFileBase64, arrayBufferToBase64 } from '../core/base64';
 import { utf8ToBase64 } from '../core/base64';
 import { setCustomMusicBegin, setCustomMusicChunk, setCustomMusicFinish, setFallbackBegin, setFallbackChunk, setFallbackFinish, importDataBegin, importDataChunk, importDataFinish } from '../core/api';
 import type { LibApp, CustomMap } from '../core/types';
@@ -103,16 +103,29 @@ export async function uploadCustomMusic(appid: number | string, gameName: string
 }
 
 
+export const MAX_IMPORT_BYTES = 600 * 1024 * 1024;
+const IMPORT_CHUNK_BYTES = 768 * 1024;
+
+function readBlobBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => resolve(arrayBufferToBase64(fr.result as ArrayBuffer));
+    fr.onerror = () => reject(fr.error ?? new Error('read_failed'));
+    fr.readAsArrayBuffer(blob);
+  });
+}
+
 export async function importCollectionFile(file: File): Promise<{ ok: boolean; error?: string; files?: number }> {
   const parse = (raw: unknown): { ok: boolean; error?: string; files?: number } => {
     const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
     return parsed ?? { ok: false, error: 'empty_response' };
   };
+  if (file.size > MAX_IMPORT_BYTES) return { ok: false, error: 'file_too_large' };
   const begin = parse(await importDataBegin());
   if (!begin?.ok) return begin;
-  const data = await readFileBase64(file);
-  for (let i = 0; i < data.length; i += UPLOAD_CHUNK) {
-    const r = parse(await importDataChunk(data.slice(i, i + UPLOAD_CHUNK)));
+  for (let offset = 0; offset < file.size; offset += IMPORT_CHUNK_BYTES) {
+    const data = await readBlobBase64(file.slice(offset, offset + IMPORT_CHUNK_BYTES));
+    const r = parse(await importDataChunk(data));
     if (!r?.ok) return r;
   }
   return parse(await importDataFinish());
