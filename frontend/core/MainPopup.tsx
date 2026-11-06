@@ -5,7 +5,7 @@ import { warn } from './log';
 import { t, setLocalizationEnabled } from './i18n';
 import { getBackendSettings, setBackendSetting, getCacheInfo, getCustomList, clearFallbackMusic, exportCollection, importCollection } from './api';
 import { readFileBase64 } from './base64';
-import { ACCEPT_EXTS, MAX_UPLOAD_BYTES, uploadCustomMusic, uploadFallbackMusic } from '../settings/library';
+import { ACCEPT_EXTS, MAX_UPLOAD_BYTES, uploadCustomMusic, uploadFallbackMusic, importCollectionFile } from '../settings/library';
 import {
   state, getAudioEl, setGlobalCustomCount, setGlobalCacheInfo, getCustomCount, subscribeCustomCount,
   subscribeCacheInfo, subscribeContext, getContext, subscribePlayback, isPlaying, reapplyForApp,
@@ -269,6 +269,7 @@ function SettingsTab({ onUiRefresh }: { onUiRefresh: () => void }): React.JSX.El
   const fallbackFileRef = useRef<HTMLInputElement | null>(null);
   const [collectionBusy, setCollectionBusy] = useState(false);
   const [collectionInfo, setCollectionInfo] = useState<string | null>(null);
+  const collectionFileRef = useRef<HTMLInputElement | null>(null);
   const [localizedUi, setLocalizedUi] = useState(state.settings.localized !== false);
 
   const onLocalizedToggle = (checked: boolean) => {
@@ -295,11 +296,13 @@ function SettingsTab({ onUiRefresh }: { onUiRefresh: () => void }): React.JSX.El
     }
   };
 
-  const onImportCollection = async () => {
+  const onImportCollection = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
     setCollectionBusy(true);
     try {
-      const parse = (raw: unknown) => (typeof raw === 'string' ? JSON.parse(raw) : raw) as { ok?: boolean; files?: number; error?: string };
-      const r = parse(await importCollection());
+      const r = await importCollectionFile(file);
       if (r?.ok) {
         setCollectionInfo(t('Imported {files} files.', { files: r.files ?? 0 }));
         const raw = await getBackendSettings();
@@ -309,14 +312,14 @@ function SettingsTab({ onUiRefresh }: { onUiRefresh: () => void }): React.JSX.El
           setFallbackTitle(typeof state.settings.fallback_title === 'string' ? state.settings.fallback_title : '');
           setFallbackSet(Boolean(state.settings.fallback_file));
         }
-      } else if (r?.error === 'no_collection_file') {
-        setCollectionInfo(t('Put game-theme-song-collection.gtscollection into the backup folder first.'));
+      } else if (r?.error === 'bad_format') {
+        setCollectionInfo(t('Invalid collection file.'));
       } else {
         setCollectionInfo(t('Import failed: {error}', { error: r?.error ?? 'unknown' }));
       }
     } catch (e) {
       warn('import collection failed', e);
-      setCollectionInfo('Import failed.');
+      setCollectionInfo(t('Import failed.'));
     } finally {
       setCollectionBusy(false);
     }
@@ -466,7 +469,8 @@ function SettingsTab({ onUiRefresh }: { onUiRefresh: () => void }): React.JSX.El
         </div>
         <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
           <DialogButtonSecondary disabled={collectionBusy} onClick={() => void onExportCollection()}>{t('Export')}</DialogButtonSecondary>
-          <DialogButtonSecondary disabled={collectionBusy} onClick={() => void onImportCollection()}>{t('Import')}</DialogButtonSecondary>
+          <DialogButtonSecondary disabled={collectionBusy} onClick={() => collectionFileRef.current?.click()}>{t('Import')}</DialogButtonSecondary>
+          <input ref={collectionFileRef} type="file" accept=".gtscollection" hidden onChange={(e) => void onImportCollection(e)} />
         </div>
       </div>
     </div>

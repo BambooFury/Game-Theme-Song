@@ -1245,6 +1245,8 @@ end
         mem_cache.track_mp3 = {}
         save_cache()
         resolve_busy = false
+        local fb = try_fallback()
+        if fb then return fb end
         return json.encode({ ok = false, error = "skipped_after_crash" })
     end
     write_file(RESOLVE_MARKER, key)
@@ -1284,23 +1286,27 @@ end
         end
         local dl_base = target_slot == "b" and (key .. "_b") or key
         local variants = name_variants(game_name)
-        local r = local_resolve(game_name, key, exclude_set, dl_base)
+        local ok_stage, r = pcall(local_resolve, game_name, key, exclude_set, dl_base)
+        if not ok_stage then r = nil end
         local kh_err
         if not (r and r.file) then
             for _, q in ipairs(variants) do
-                r, kh_err = khinsider_resolve(q, key, exclude_set, dl_base)
-                if r and r.file then break end
+                ok_stage, r = pcall(khinsider_resolve, q, key, exclude_set, dl_base)
+                if ok_stage and r and r.file then break end
+                r = nil
             end
         end
         local ia_err
         if not (r and r.file) then
-            r, ia_err = ia_resolve(game_name, key, exclude_set, dl_base)
+            ok_stage, r = pcall(ia_resolve, game_name, key, exclude_set, dl_base)
+            if not ok_stage then r = nil; ia_err = "ia_failed" end
         end
         if not (r and r.file) then
             local sc_err
             for _, q in ipairs(variants) do
-                r, sc_err = sc_resolve(q, key, exclude_set, dl_base)
-                if r and r.file then break end
+                ok_stage, r = pcall(sc_resolve, q, key, exclude_set, dl_base)
+                if ok_stage and r and r.file then break end
+                r = nil
             end
             if not (r and r.file) then
 local err_code = sc_err or kh_err or "not_found"
@@ -1731,50 +1737,95 @@ function export_collection()
     end)
 end
 
+local function restore_collection_from(path)
+    local fin = io.open(path, "rb")
+    if not fin then return json.encode({ ok = false, error = "read_failed" }) end
+    local magic = fin:read(6)
+    if magic ~= "GTSC1" .. COLLECTION_NL then fin:close() return json.encode({ ok = false, error = "bad_format" }) end
+    local header = fin:read("*l")
+    local meta = safe_decode(header or "")
+    if type(meta) ~= "table" or type(meta.files) ~= "table" then fin:close() return json.encode({ ok = false, error = "bad_format" }) end
+    local restored = 0
+    for _, f in ipairs(meta.files) do
+        local name = tostring(f.name or "")
+        if name:find("\\", 1, true) or name:find("/", 1, true) or name:match("%.%.") then
+            -- skip unsafe names
+        else
+            local dst = join(CUSTOM_BACKUP_DIR, name)
+            local fout = io.open(dst, "wb")
+            if fout then
+                local remaining = tonumber(f.size) or 0
+                while remaining > 0 do
+                    local chunk = fin:read(math.min(remaining, 262144))
+                    if not chunk then break end
+                    fout:write(chunk)
+                    remaining = remaining - #chunk
+                end
+                fout:close()
+                restored = restored + 1
+            end
+        end
+    end
+    fin:close()
+    pcall(function()
+        load_state()
+        restore_custom_backup()
+        custom_list_cache = nil
+    end)
+    return json.encode({ ok = true, files = restored })
+end
+
 ---@ffi
 ---Import a collection file previously written into the backup folder.
 ---@return string JSON { ok, files }
 function import_collection()
     return run_io("import_collection", function()
         if not fs then return json.encode({ ok = false, error = "fs_unsupported" }) end
-        local src = join(CUSTOM_BACKUP_DIR, COLLECTION_NAME)
-        if not (fs.exists and fs.exists(src)) then return json.encode({ ok = false, error = "no_collection_file" }) end
-        local fin = io.open(src, "rb")
-        if not fin then return json.encode({ ok = false, error = "read_failed" }) end
-        local magic = fin:read(6)
-        if magic ~= "GTSC1" .. COLLECTION_NL then fin:close() return json.encode({ ok = false, error = "bad_format" }) end
-        local header = fin:read("*l")
-        local meta = safe_decode(header or "")
-        if type(meta) ~= "table" or type(meta.files) ~= "table" then fin:close() return json.encode({ ok = false, error = "bad_format" }) end
-        local restored = 0
-        for _, f in ipairs(meta.files) do
-            local name = tostring(f.name or "")
-            if name:find("\\", 1, true) or name:find("/", 1, true) or name:match("%.%.") then
-                -- skip unsafe names
-            else
-                local dst = join(CUSTOM_BACKUP_DIR, name)
-                local fout = io.open(dst, "wb")
-                if fout then
-                    local remaining = tonumber(f.size) or 0
-                    while remaining > 0 do
-                        local chunk = fin:read(math.min(remaining, 262144))
-                        if not chunk then break end
-                        fout:write(chunk)
-                        remaining = remaining - #chunk
-                    end
-                    fout:close()
-                    restored = restored + 1
-                end
-            end
-        end
-        fin:close()
-        pcall(function()
-            load_state()
-            restore_custom_backup()
-            custom_list_cache = nil
-        end)
-        return json.encode({ ok = true, files = restored })
+        return restore_collection_from(join(CUSTOM_BACKUP_DIR, COLLECTION_NAME))
     end)
+end
+
+local import_sessions = {}
+
+---@ffi
+---Start a chunked collection-file upload.
+---@return string JSON { ok }
+function import_data_begin()
+    import_sessions["__imp__"] = { parts = {}, bytes = 0 }
+    return json.encode({ ok = true })
+end
+
+---@ffi
+---Append a base64 chunk to the collection upload.
+---@param chunk string base64 fragment
+---@return string JSON { ok }
+function import_data_chunk(chunk)
+    local s = import_sessions["__imp__"]
+    if not s then return json.encode({ ok = false, error = "no_session" }) end
+    local part = tostring(chunk or "")
+    s.bytes = s.bytes + #part
+    if s.bytes > 800 * 1024 * 1024 then import_sessions["__imp__"] = nil; return json.encode({ ok = false, error = "file_too_large" }) end
+    s.parts[#s.parts + 1] = part
+    return json.encode({ ok = true })
+end
+
+---@ffi
+---Finish the collection upload and restore from it.
+---@return string JSON { ok, files }
+function import_data_finish()
+    local ok, result = pcall(function()
+        local s = import_sessions["__imp__"]
+        if not s then return json.encode({ ok = false, error = "no_session" }) end
+        local data = base64_decode(table.concat(s.parts))
+        import_sessions["__imp__"] = nil
+        if #data < 8 or data:sub(1, 5) ~= "GTSC1" then return json.encode({ ok = false, error = "bad_format" }) end
+        local tmp = join(CUSTOM_BACKUP_DIR, COLLECTION_NAME)
+        if not write_file(tmp, data) then return json.encode({ ok = false, error = "write_failed" }) end
+        return restore_collection_from(tmp)
+    end)
+    collectgarbage("collect")
+    if not ok then logger:warn("import_data_finish crashed: " .. tostring(result)); return json.encode({ ok = false, error = "internal_error" }) end
+    return result
 end
 
 ---@ffi
@@ -1909,7 +1960,7 @@ end
 
 local MUSIC_BUTTON_PATCH = {
     find = [[\.AppButtonsContainer,children:\[\(0,(\w+)\.jsx\)\(\w+,\{\.\.\.this\.props\}\)]],
-    file = [[chunk~[0-9a-f]+\.js]],
+    file = [[chunk~[0-9a-f]+\.js|sp\.js]],
     transforms = {
         {
             match = [[\.AppButtonsContainer,children:\[\(0,(\w+)\.jsx\)]],
