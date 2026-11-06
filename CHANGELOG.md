@@ -1,5 +1,20 @@
 # Changelog
 
+## [2.3.0](https://github.com/BambooFury/Game-Theme-Song/compare/v2.2.0...v2.3.0) (2026-11-06)
+
+
+### Features
+
+* import via file picker and fix button patch for new steam chunk ([797d6cd](https://github.com/BambooFury/Game-Theme-Song/commit/797d6cd281f83589c4a2e8cad4c032ef15798a83))
+* linux dom fallback for the note button ([4e5c343](https://github.com/BambooFury/Game-Theme-Song/commit/4e5c343df2a054a5f89745d6c1047c0b1b4f2884))
+
+
+### Bug Fixes
+
+* isolate resolve stages in pcalls and keep fallback after crash ([e3df212](https://github.com/BambooFury/Game-Theme-Song/commit/e3df2127a136b7b72dcb8854ab6be6263dbef7e3))
+* stream collection import in bounded slices ([6ad9fd1](https://github.com/BambooFury/Game-Theme-Song/commit/6ad9fd101dda96703829ed5cb6a5e832290f54bf))
+* use native dot wrapper for linux button hover ([8b5ada4](https://github.com/BambooFury/Game-Theme-Song/commit/8b5ada4b1e1121f9bf812174ce40f871c256d352))
+
 ## [2.2.0](https://github.com/BambooFury/Game-Theme-Song/compare/v2.1.1...v2.2.0) (2026-10-03)
 
 
