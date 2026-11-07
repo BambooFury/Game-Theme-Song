@@ -347,6 +347,15 @@ local function read_file(path)
     return data
 end
 
+local function copy_file(src, dst)
+    local f = io.open(src, "rb")
+    if not f then return false end
+    local data = f:read("*a")
+    f:close()
+    if not data then return false end
+    return write_file(dst, data)
+end
+
 local function write_file(path, data)
     local f = io.open(path, "wb")
     if not f then return false end
@@ -1431,15 +1440,6 @@ function set_ignored(app_id, value)
 end
 
 local upload_sessions = {}
-
-local function copy_file(src, dst)
-    local f = io.open(src, "rb")
-    if not f then return false end
-    local data = f:read("*a")
-    f:close()
-    if not data then return false end
-    return write_file(dst, data)
-end
 
 local function sync_custom_backup()
     if not fs then return end
