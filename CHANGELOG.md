@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.4.0](https://github.com/BambooFury/Game-Theme-Song/compare/v2.3.1...v2.4.0) (2026-11-07)
+
+
+### Features
+
+* settings entry opens the popup on all platforms ([d98e7c9](https://github.com/BambooFury/Game-Theme-Song/commit/d98e7c92e3ab8069f4e1ac9770b0d53ba8472dd0))
+
+
+### Bug Fixes
+
+* declare copy_file before first use ([7f8d4a0](https://github.com/BambooFury/Game-Theme-Song/commit/7f8d4a04c8f6fc4f5b808908d1d59947e5565294))
+* purge auto tracks when custom is set, resilient patch find ([620d7c7](https://github.com/BambooFury/Game-Theme-Song/commit/620d7c7294edaf45c04f2de899fd357aac7c71af))
+
 ## [2.3.1](https://github.com/BambooFury/Game-Theme-Song/compare/v2.3.0...v2.3.1) (2026-11-06)
 
 
