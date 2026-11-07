@@ -347,6 +347,15 @@ local function read_file(path)
     return data
 end
 
+local function copy_file(src, dst)
+    local f = io.open(src, "rb")
+    if not f then return false end
+    local data = f:read("*a")
+    f:close()
+    if not data then return false end
+    return write_file(dst, data)
+end
+
 local function write_file(path, data)
     local f = io.open(path, "wb")
     if not f then return false end
@@ -1256,9 +1265,14 @@ end
         local exclude_set = build_exclude(exclude)
         local rerolling = next(exclude_set) ~= nil
         local cust = custom[key]
-        if not rerolling and cust and cust.file and fs and fs.exists and fs.exists(join(AUDIO_DIR, cust.file)) then
-            local url = LOOPBACK_BASE .. cust.file .. "?v=" .. tostring(cust.ts or 0)
-            return json.encode({ ok = true, url = url, title = cust.title, cached = true, custom = true })
+        if not rerolling and cust and cust.file then
+            local dst = join(AUDIO_DIR, cust.file)
+            local src = join(CUSTOM_BACKUP_DIR, cust.file)
+            if fs and fs.exists and not fs.exists(dst) and fs.exists(src) then copy_file(src, dst) end
+            if not fs.exists or fs.exists(dst) then
+                local url = LOOPBACK_BASE .. cust.file .. "?v=" .. tostring(cust.ts or 0)
+                return json.encode({ ok = true, url = url, title = cust.title, cached = true, custom = true })
+            end
         end
         
         local entry = cache[key]
@@ -1291,20 +1305,20 @@ end
         local kh_err
         if not (r and r.file) then
             for _, q in ipairs(variants) do
-                ok_stage, r = pcall(khinsider_resolve, q, key, exclude_set, dl_base)
+                ok_stage, r, kh_err = pcall(khinsider_resolve, q, key, exclude_set, dl_base)
                 if ok_stage and r and r.file then break end
                 r = nil
             end
         end
         local ia_err
         if not (r and r.file) then
-            ok_stage, r = pcall(ia_resolve, game_name, key, exclude_set, dl_base)
-            if not ok_stage then r = nil; ia_err = "ia_failed" end
+            ok_stage, r, ia_err = pcall(ia_resolve, game_name, key, exclude_set, dl_base)
+            if not ok_stage then r = nil end
         end
         if not (r and r.file) then
             local sc_err
             for _, q in ipairs(variants) do
-                ok_stage, r = pcall(sc_resolve, q, key, exclude_set, dl_base)
+                ok_stage, r, sc_err = pcall(sc_resolve, q, key, exclude_set, dl_base)
                 if ok_stage and r and r.file then break end
                 r = nil
             end
@@ -1427,15 +1441,6 @@ end
 
 local upload_sessions = {}
 
-local function copy_file(src, dst)
-    local f = io.open(src, "rb")
-    if not f then return false end
-    local data = f:read("*a")
-    f:close()
-    if not data then return false end
-    return write_file(dst, data)
-end
-
 local function sync_custom_backup()
     if not fs then return end
     pcall(fs.create_directories, CUSTOM_BACKUP_DIR)
@@ -1511,6 +1516,12 @@ local function store_custom(app_id, game_name, filename, title, data, ext_hint, 
     if clean_title == "" then clean_title = "Custom track" end
     resolved_name = sanitize_text(resolved_name or "")
     local ts = os.time()
+    for _, e in ipairs(AUDIO_EXTS) do
+        pcall(fs.remove, join(AUDIO_DIR, key .. "." .. e))
+        pcall(fs.remove, join(AUDIO_DIR, key .. "_b." .. e))
+    end
+    cache[key] = nil
+    save_cache()
     custom[key] = { file = fname, title = clean_title, name = resolved_name or "", ts = ts }
     save_custom()
     sync_custom_backup()
@@ -1959,7 +1970,7 @@ end
 end
 
 local MUSIC_BUTTON_PATCH = {
-    find = [[\.AppButtonsContainer,children:\[\(0,(\w+)\.jsx\)\(\w+,\{\.\.\.this\.props\}\)]],
+    find = [[\.AppButtonsContainer,children:\[\(0,(\w+)\.jsx\)]],
     file = [[chunk~[0-9a-f]+\.js|sp\.js]],
     transforms = {
         {

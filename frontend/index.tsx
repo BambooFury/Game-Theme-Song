@@ -9,8 +9,6 @@ import { t } from './core/i18n';
 
 export { hookedMusicButton } from './core/MusicButtonHook';
 
-const isLinux = /linux/i.test(navigator.userAgent);
-
 const SettingsContent: React.FC = () => (
 	<ButtonItem
 		layout="below"
@@ -34,7 +32,7 @@ export default definePlugin(() => {
 	return {
 		title: 'Game Theme Song',
 		icon: <></>,
-		content: isLinux ? <SettingsContent /> : undefined,
+		content: <SettingsContent />,
 		onDismount() {
 			routerHook.removeGlobalComponent('GTSManagerWindows');
 			unregisterLaunchStop();
